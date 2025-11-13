@@ -5,16 +5,10 @@ import toml
 from mmode_tools.constants import c,MRO,ONSALA
 from warnings import warn
 import importlib.resources as resources
+from mmode_tools.io import get_config_directory
 
-HOMEDIR = os.path.expanduser("~")
-configFile = "default_config.toml"
-mmodeConfigPath = "mmode_tools.config"
-
-with resources.files(mmodeConfigPath).joinpath(configFile).open("r") as f:
-    config = toml.load(f)
-    dirs = config.get("paths", {})
-
-interferometerPath = HOMEDIR + dirs["interferometerPath"]
+# Getting the output default path.
+interferometerPath = get_config_directory(pathName="interferometerPath")
 
 MRO_LAT = MRO.lat.value
 ONSALA_LAT = ONSALA.lat.value
@@ -110,9 +104,6 @@ class RadioArray:
         self.telescope = telescope
 
         # Shifting the east, north, height, for mean zero.
-        #self.east -= np.nanmean(self.east)
-        #self.north -= np.nanmean(self.north)
-        #self.height -= np.nanmean(self.height)
         self.filepath = filepath
         # Array latitude and longitude in degrees:
         self.lat = arrayLat
@@ -617,12 +608,12 @@ def make_radio_array(filePath=None,eastNorthHeight=None,lat=None,lon=None,
         raise ValueError("Either eastNorthHeight or filePath must be provided.")
 
     class outClass(RadioArray):
-        filepath = str(filePath)
+        #filepath = str(filePath)
         arrayLat = lat
         arrayLon = lon
-        def __init__(self,filepath=filepath,eastNorthHeight=eastNorthHeight,
+        def __init__(self,filepath=filePath,eastNorthHeight=eastNorthHeight,
                      arrayLat=arrayLat,telescope=telescope):
-            super().__init__(filepath=filepath,eastNorthHeight=eastNorthHeight,
+            super().__init__(filepath=filePath,eastNorthHeight=eastNorthHeight,
                              arrayLat=arrayLat,telescope=telescope)
             super().enh2xyz()
             super().calc_baseline_matrix()
