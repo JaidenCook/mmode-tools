@@ -27,8 +27,88 @@ Requires-Dist: ducc0
 Requires-Dist: cmasher
 Dynamic: license-file
 
-# Example Package
+# MMODE_TOOLS
 
-This is a simple example package. You can use
-[GitHub-flavored Markdown](https://guides.github.com/features/mastering-markdown/)
-to write your content.
+Basic package that takes a set of visibilities from some instrument sampled over a full sidereal day, and produces an all-sky map using the $m$-mode transit interferometry formalism. This is done by inverting the following expression:
+
+$$
+\begin{equation}
+    \mathbf{v}_m = \mathbf{B}_m\mathbf{a}_m
+\end{equation}
+$$
+
+This equation represents the relationship between the $m$-mode visibilities (visibilities Fourier transformed over a full sidereal day) to the sky spherical harmonic coefficients, where $\mathbf{B}$ is the transfer matrix which encodes all the information about the instruments primary beam and fringe maps into a set of unique instrumental spherical harmonic coefficients for every baseline. The resulting output of inverting this function are the sky spherical harmonic coefficients, which can be used to create a map of the whole sky using the spherical harmonic basis functions. This is the output of the package. 
+
+
+This package is designed to work with any system (MWA, EDA2, LOFAR, LWA for example). This package assumes that the visibility data is already processed (calibrated, flagged and collated) into the appropriate format. We provide an example data set that demonstrates the input format required for this package. 
+
+
+## Installing the Package
+For the users using the MWA beam model, the ```MWA_BEAM_FILE``` parameter in the ```default_config.toml``` is set to "" (an empty string), which is equivalent to using the analytic MWA beam model. If the user has a copy of the FEE beam model ```hdf5``` file, edit this path to point towards model and the FEE beam model should be used in any beam model generation. 
+
+Additionally, the package on first import sets up a bunch of default path locations in the users ```$HOMEDIR``` these can be edited by the user to change the path configuration. Do this before installing in the package. 
+
+```
+git clone https://github.com/JaidenCook/mmode-tools.git
+cd ~/mmode_tools
+pip install .
+```
+
+Alternatively install in developer mode:
+
+```
+pip install -e .
+```
+
+Upon first import of the package a few example datasets are created and moved to the default directories. These example data sets and how to use the package are demonstrated in a series of simple notebooks in the ```notebooks``` directory of this repository.
+
+### Notebook Order:
+
+1. ```load-covariance-tensor-example.ipynb```
+2. ```forward-model-example.ipynb```
+3. ```calc-beam-coefficients N32_config.toml -p -v``` -- Make the beam fringe coefficients.
+4. ```dirty-map-generation.ipynb```
+
+## Command Line Tools
+
+A set of command line tools were created to process the visibility data into al-sky maps, before this can be done, there are a few necessary steps:
+
+1. Generate telescope/interferometer configuration file. This is a ```.toml``` file. 
+2. Use the config file to generate the beam fringe coefficients, this can be done with either the default dipole model, or an input beam model.
+3. Fit for the dirty spherical harmonic coefficients. 
+4. Clean the output dirty map (TBD).
+
+There are command line tools for each of the above steps (with the exception of cleaning this is TBD). 
+
+The first two steps are seting up the instrumental known parameters that are required to perform the inversion (essentially creating the transfer matrix $\mathbf{B}$). To do this we need two components, the beam model (in SIN orthographic projection), and the topographic locations of the interferometer antennas/stations (along with the array latitude and longitude), these are used to generate the $(u,v,w)$ values for each baseline. These are then combined to generate the beam fringe coefficients for each baseline. Ideally these two steps only need to be done once per instrument per instrumental polarisation per frequency. The resulting coefficients are stored in a hdf5 file; these files can be large in size (1-1000GB). The space requirement for a single interferometer scales as $N_\mathrm{baselines}*(lmax)^2$, where $l_\mathrm{max} \propto \mathrm{max}\{r_{uv}\}$ (the maximum baseline length). 
+
+### Generating the instrument configuration file:
+
+```
+generate-telescope-config array_layout.txt  --lat 0 --lon 0 --name $telescopeName -v
+```
+This command line tool creates a interferometer config file. This config file is used to create the baseline distribution for a given array, which is used to generate the beam fringe coefficients. The output from this cli-tool is by default saved to the path ```$HOMEDIR/mmode_tools/interferometers/```. The ```array_layout.txt``` text file should contain four columns, one with the antenna ID, then east north and height. The ```--lat``` and ```-lon``` coordinates are the array centre coordinates, and are default set to zero. We provide an example config file for a psuedo random 32 element array called ```N32_config.toml```. We also provide array layout files for the MWA Phase II compact and extended configurations as well as the EDA2.
+
+### Calculating the instrument beam fringe coefficients:
+
+```
+calc-beam-coefficients telescope_config.toml --beam-file $beamFilePath --pol XX --lmax 130 -v
+```
+
+The default path to should be ```$HOMEDIR/mmode_tools/beam_models/primary_beam_models/```, so only the beamFileName is needed, however there is flexibility to input any file path required. If the beamFileName is not provided then the default dipole beam model is used, this is not ideal for data processing, but is useful for testing purposes. The output is stored in ```$HOMEDIR/mmode_tools/beam_models/beam_fringe_coefficients/``` and the filename should have a standard output ```beam_fringe_coeffs-${telescope}-${freqMHz}MHz-${pol}-lMax${lmax}.hdf5```, there is also the optional ```--outname,-o``` as well as the optional argument ```--outpath,-O```. Alternatively the user can edit the path locations in the ```default_config.toml```.
+
+### Solving for the sky sherical harmonic coefficients
+
+The true power of this package is we can invert multiple instruments at the same time. This means multiple input data files, beam fringe coefficient files, interferometer configuration files etc. To handle this mess the ```mmode_tools.io.write_data_config``` compliles all the information (path locations, metadata etc) into a useful ```data_config.toml``` file. 
+
+**Note: This format or way of doing things might change in future versions, it is probably more useful to store some of the metadata in the config in the covariance tensor (or data) ```hdf5``` files directly, and to update them as throughout the process. For now this is how things are done. **
+
+To create the all-sky map and solve for the coefficients, simply use the cli-tool ```fit-map```
+
+```
+fit-map data_config.toml --lmax 130 --damp 0.01
+```
+
+This should output a FITS file containing the Plate Caree (CAR) projection of the celestial sphere, along with the sky-coefficients as one of the hdu objects. This will be saved in the default ```$HOMEDIR/mmode_tools/fit_coefficients/dirty/``` location, and the standard naming convention for the file is ```data_config.fits```. Again these can be changed with user inputs, see the help for the cli tool.
+
+Important to note, the choice of damping value defaults to 0.01, which seems to perform reasonably well. However, it is left up to the user to determine what this optimal value should be. In future versions a more robust regularisation method will be implemented, but for now this does the job.
