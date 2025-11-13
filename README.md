@@ -20,7 +20,7 @@ For the users using the MWA beam model, the ```MWA_BEAM_FILE``` parameter in the
 Additionally, the package on first import sets up a bunch of default path locations in the users ```$HOMEDIR``` these can be edited by the user to change the path configuration. Do this before installing in the package. 
 
 ```
-git clone https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git
+git clone https://github.com/JaidenCook/mmode-tools.git
 cd ~/mmode_tools
 pip install .
 ```
