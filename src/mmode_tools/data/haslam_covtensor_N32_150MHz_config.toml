@@ -1,0 +1,13 @@
+[params]
+stokes = [ "XX", "YY",]
+telescopes = [ "N32", "N32",]
+telescope_config_files = [ "/Users/coo426/mmode_tools/interferometers/N32_config.toml", "/Users/coo426/mmode_tools/interferometers/N32_config.toml",]
+freq = 150000000.0
+latitudes = [ 0.0, 0.0,]
+lMaxList = [ 130, 130,]
+
+[data]
+file_paths = [ "/Users/coo426/mmode_tools/covtensors/haslam_covtensor_N32_150MHz.h5", "/Users/coo426/mmode_tools/covtensors/haslam_covtensor_N32_150MHz.h5",]
+
+[beams]
+file_paths = [ "/Users/coo426/mmode_tools/beam_models/beam_fringe_coefficients/beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5", "/Users/coo426/mmode_tools/beam_models/beam_fringe_coefficients/beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5",]

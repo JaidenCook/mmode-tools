@@ -1,0 +1,34 @@
+Metadata-Version: 2.4
+Name: mmode_tools
+Version: 0.0.1
+Summary: A small example package
+Author-email: Jaiden Cook <jaiden.cook1@gmail.com>
+License-Expression: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: typer
+Requires-Dist: numpy
+Requires-Dist: toml
+Requires-Dist: astropy
+Requires-Dist: tqdm
+Requires-Dist: scipy
+Requires-Dist: h5py
+Requires-Dist: healpy
+Requires-Dist: joblib
+Requires-Dist: pylops
+Requires-Dist: pyshtools
+Requires-Dist: matplotlib
+Requires-Dist: scikit-image
+Requires-Dist: mwa_hyperbeam
+Requires-Dist: ducc0
+Requires-Dist: cmasher
+Dynamic: license-file
+
+# Example Package
+
+This is a simple example package. You can use
+[GitHub-flavored Markdown](https://guides.github.com/features/mastering-markdown/)
+to write your content.

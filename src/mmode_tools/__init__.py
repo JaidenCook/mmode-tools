@@ -1,0 +1,4 @@
+from mmode_tools.config.setup_paths import ensure_output_dirs
+from mmode_tools.config.setup_paths import copy_array_data_files
+ensure_output_dirs()
+copy_array_data_files()

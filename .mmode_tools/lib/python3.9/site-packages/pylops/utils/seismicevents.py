@@ -1,0 +1,569 @@
+__all__ = [
+    "makeaxis",
+    "linear2d",
+    "parabolic2d",
+    "hyperbolic2d",
+    "linear3d",
+    "parabolic3d",
+    "hyperbolic3d",
+]
+
+from typing import Dict, Tuple, Union
+
+import numpy as np
+import numpy.typing as npt
+import scipy.signal as filt
+
+from pylops.utils._internal import _value_or_sized_to_array
+
+
+def _filterdata(
+    d: npt.NDArray, nt: int, wav: npt.ArrayLike, wcenter: int
+) -> Tuple[npt.ArrayLike, npt.ArrayLike]:
+    r"""Apply filtering to data with wavelet wav"""
+    dwav = filt.lfilter(wav, 1, d, axis=-1)
+    dwav = dwav[..., wcenter:]
+    d = d[..., : (nt - wcenter)]
+    return d, dwav
+
+
+def makeaxis(par: Dict) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray, npt.NDArray]:
+    r"""Create axes t, x, and y axes
+
+    Create space and time axes from dictionary containing initial values ``ot``, ``ox``, ``oy``,
+    sampling steps ``dt``, dx``, ``dy`` and number of elements ``nt``, nx``, ``ny``
+    for each axis.
+
+    Parameters
+    ----------
+    par : :obj:`dict`
+        Dictionary containing initial values, sampling steps, and number of elements
+
+    Returns
+    -------
+    t : :obj:`numpy.ndarray`
+        Time axis
+    t2 : :obj:`numpy.ndarray`
+        Symmetric time axis
+    x : :obj:`numpy.ndarray`
+        x axis
+    y : :obj:`numpy.ndarray`
+        y axis (``None``, if ``oy``, ``dy`` or ``ny`` are not provided)
+
+    Examples
+    --------
+    >>> par = {'ox':0, 'dx':2, 'nx':60,
+    >>>        'oy':0, 'dy':2, 'ny':100,
+    >>>        'ot':0, 'dt':4, 'nt':400}
+    >>> # Create axis
+    >>> t, t2, x, y = makeaxis(par)
+    """
+    x = par["ox"] + np.arange(par["nx"]) * par["dx"]
+    t = par["ot"] + np.arange(par["nt"]) * par["dt"]
+    t2 = np.arange(-par["nt"] + 1, par["nt"]) * par["dt"]
+
+    if "oy" in par.keys():
+        y = par["oy"] + np.arange(par["ny"]) * par["dy"]
+    else:
+        y = None
+    return t, t2, x, y
+
+
+def linear2d(
+    x: npt.NDArray,
+    t: npt.NDArray,
+    v: float,
+    t0: Union[float, Tuple[float]],
+    theta: Union[float, Tuple[float]],
+    amp: Union[float, Tuple[float]],
+    wav: npt.NDArray,
+) -> Tuple[npt.NDArray, npt.NDArray]:
+    r"""Linear 2D events
+
+    Create 2d linear events given propagation velocity, intercept time, angle,
+    and amplitude of each event
+
+    Parameters
+    ----------
+    x : :obj:`numpy.ndarray`
+        space axis
+    t : :obj:`numpy.ndarray`
+        time axis
+    v : :obj:`float`
+        propagation velocity
+    t0 : :obj:`tuple` or :obj:`float`
+        intercept time at :math:`x=0` of each linear event
+    theta : :obj:`tuple` or :obj:`float`
+        angle (in degrees) of each linear event
+    amp : :obj:`tuple` or :obj:`float`
+        amplitude of each linear event
+    wav : :obj:`numpy.ndarray`
+        wavelet to be applied to data
+
+    Returns
+    -------
+    d : :obj:`numpy.ndarray`
+        data without wavelet  of size
+        :math:`[n_x \times n_t]`
+    dwav : :obj:`numpy.ndarray`
+        data with wavelet  of size
+        :math:`[n_x \times n_t]`
+
+    Notes
+    -----
+    Each event is created using the following relation:
+
+    .. math::
+        t_i(x) = t_{0,i} + p_{x,i} x
+
+    where :math:`p_{x,i}=\sin( \theta_i)/v`
+
+    """
+    t0 = _value_or_sized_to_array(t0)
+    theta = _value_or_sized_to_array(theta)
+    amp = _value_or_sized_to_array(amp)
+
+    # identify dimensions
+    dt = t[1] - t[0]
+    wcenter = int(len(wav) / 2)
+    nx = np.size(x)
+    nt = np.size(t) + wcenter
+    nevents = np.size(t0)
+
+    # create events
+    d = np.zeros((nx, nt))
+    for ievent in range(nevents):
+        px = np.sin(np.deg2rad(theta[ievent])) / v
+        tevent = t0[ievent] + px * x
+        tevent = (tevent - t[0]) / dt
+        itevent = tevent.astype(int)
+        dtevent = tevent - itevent
+        for ix in range(nx):
+            if itevent[ix] < nt - 1 and itevent[ix] >= 0:
+                d[ix, itevent[ix]] += amp[ievent] * (1 - dtevent[ix])
+                d[ix, itevent[ix] + 1] += amp[ievent] * dtevent[ix]
+
+    # filter events with certain wavelet
+    d, dwav = _filterdata(d, nt, wav, wcenter)
+    return d, dwav
+
+
+def parabolic2d(
+    x: npt.NDArray,
+    t: npt.NDArray,
+    t0: Union[float, Tuple[float]],
+    px: Union[float, Tuple[float]],
+    pxx: Union[float, Tuple[float]],
+    amp: Union[float, Tuple[float]],
+    wav: npt.NDArray,
+) -> Tuple[npt.NDArray, npt.NDArray]:
+    r"""Parabolic 2D events
+
+    Create 2d parabolic events given intercept time,
+    slowness, curvature, and amplitude of each event.
+
+    Parameters
+    ----------
+    x : :obj:`numpy.ndarray`
+        space axis
+    t : :obj:`numpy.ndarray`
+        time axis
+    t0 : :obj:`tuple` or :obj:`float`
+        intercept time at :math:`x=0` of each parabolic event
+    px : :obj:`tuple` or :obj:`float`
+        slowness of each parabolic event
+    pxx : :obj:`tuple` or :obj:`float`
+        curvature of each parabolic event
+    amp : :obj:`tuple` or :obj:`float`
+        amplitude of each parabolic event
+    wav : :obj:`numpy.ndarray`
+        wavelet to be applied to data
+
+    Returns
+    -------
+    d : :obj:`numpy.ndarray`
+        data without wavelet of size
+        :math:`[n_x \times n_t]`
+    dwav : :obj:`numpy.ndarray`
+        data with wavelet of size
+        :math:`[n_x \times n_t]`
+
+    Notes
+    -----
+    Each event is created using the following relation:
+
+    .. math::
+        t_i(x) = t_{0,i} + p_{x,i} x + p_{xx,i} x^2
+
+    """
+    t0 = _value_or_sized_to_array(t0)
+    px = _value_or_sized_to_array(px)
+    pxx = _value_or_sized_to_array(pxx)
+    amp = _value_or_sized_to_array(amp)
+
+    # identify dimensions
+    dt = t[1] - t[0]
+    wcenter = int(len(wav) / 2)
+    nx = np.size(x)
+    nt = np.size(t) + wcenter
+    nevents = np.size(t0)
+
+    # create events
+    d = np.zeros((nx, nt))
+    for ievent in range(nevents):
+        tevent = t0[ievent] + px[ievent] * x + pxx[ievent] * x**2
+        tevent = (tevent - t[0]) / dt
+        itevent = tevent.astype(int)
+        dtevent = tevent - itevent
+        for ix in range(nx):
+            if itevent[ix] < nt - 1 and itevent[ix] >= 0:
+                d[ix, itevent[ix]] += amp[ievent] * (1 - dtevent[ix])
+                d[ix, itevent[ix] + 1] += amp[ievent] * dtevent[ix]
+
+    # filter events with certain wavelet
+    d, dwav = _filterdata(d, nt, wav, wcenter)
+    return d, dwav
+
+
+def hyperbolic2d(
+    x: npt.NDArray,
+    t: npt.NDArray,
+    t0: Union[float, Tuple[float]],
+    vrms: Union[float, Tuple[float]],
+    amp: Union[float, Tuple[float]],
+    wav: npt.NDArray,
+) -> Tuple[npt.NDArray, npt.NDArray]:
+    r"""Hyperbolic 2D events
+
+    Create 2d hyperbolic events given intercept time, root-mean-square
+    velocity, and amplitude of each event
+
+    Parameters
+    ----------
+    x : :obj:`numpy.ndarray`
+        space axis
+    t : :obj:`numpy.ndarray`
+        time axis
+    t0 : :obj:`tuple` or :obj:`float`
+        intercept time at :math:`x=0` of each of hyperbolic event
+    vrms : :obj:`tuple` or :obj:`float`
+        root-mean-square velocity of each hyperbolic event
+    amp : :obj:`tuple` or :obj:`float`
+        amplitude of each hyperbolic event
+    wav : :obj:`numpy.ndarray`
+        wavelet to be applied to data
+
+    Returns
+    -------
+    d : :obj:`numpy.ndarray`
+        data without wavelet of size :math:`[n_x \times n_t]`
+    dwav : :obj:`numpy.ndarray`
+        data with wavelet of size :math:`[n_x \times n_t]`
+
+    Notes
+    -----
+    Each event is created using the following relation:
+
+    .. math::
+        t_i(x) = \sqrt{t_{0,i}^2 + \frac{x^2}{v_{\text{rms},i}^2}}
+
+    """
+    t0 = _value_or_sized_to_array(t0)
+    vrms = _value_or_sized_to_array(vrms)
+    amp = _value_or_sized_to_array(amp)
+
+    # identify dimensions
+    dt = t[1] - t[0]
+    wcenter = int(len(wav) / 2)
+    nx = np.size(x)
+    nt = np.size(t) + wcenter
+    nevents = np.size(t0)
+
+    # create events
+    d = np.zeros((nx, nt))
+    for ievent in range(nevents):
+        tevent = np.sqrt(t0[ievent] ** 2 + x**2 / vrms[ievent] ** 2)
+        tevent = (tevent - t[0]) / dt
+        itevent = tevent.astype(int)
+        dtevent = tevent - itevent
+        for ix in range(nx):
+            if itevent[ix] < nt - 1 and itevent[ix] >= 0:
+                d[ix, itevent[ix]] += amp[ievent] * (1 - dtevent[ix])
+                d[ix, itevent[ix] + 1] += amp[ievent] * dtevent[ix]
+
+    # filter events with certain wavelet
+    d, dwav = _filterdata(d, nt, wav, wcenter)
+    return d, dwav
+
+
+def linear3d(
+    x: npt.NDArray,
+    y: npt.NDArray,
+    t: npt.NDArray,
+    v: Union[float, Tuple[float]],
+    t0: Union[float, Tuple[float]],
+    theta: Union[float, Tuple[float]],
+    phi: Union[float, Tuple[float]],
+    amp: Union[float, Tuple[float]],
+    wav: npt.NDArray,
+) -> Tuple[npt.NDArray, npt.NDArray]:
+    r"""Linear 3D events
+
+    Create 3d linear events given propagation velocity, intercept time, angles,
+    and amplitude of each event.
+
+    Parameters
+    ----------
+    x : :obj:`numpy.ndarray`
+        space axis in x direction
+    y : :obj:`numpy.ndarray`
+        space axis in y direction
+    t : :obj:`numpy.ndarray`
+        time axis
+    v : :obj:`float`
+        propagation velocity
+    t0 : :obj:`tuple` or :obj:`float`
+        intercept time at :math:`x=0` and :math:`y=0` of each linear event
+    theta : :obj:`tuple` or :obj:`float`
+        angle in x direction (in degrees) of each linear event
+    phi : :obj:`tuple` or :obj:`float`
+        angle in y direction (in degrees) of each linear event
+    amp : :obj:`tuple` or :obj:`float`
+        amplitude of each linear event
+    wav : :obj:`numpy.ndarray`
+        wavelet to be applied to data
+
+    Returns
+    -------
+    d : :obj:`numpy.ndarray`
+        data without wavelet of size
+        :math:`[n_y \times n_x \times n_t]`
+    dwav : :obj:`numpy.ndarray`
+        data with wavelet of size
+        :math:`[n_y \times n_x \times n_t]`
+
+    Notes
+    -----
+    Each event is created using the following relation:
+
+    .. math::
+        t_i(x, y) = t_{0,i} + p_{x,i} x + p_{y,i} y
+
+    where :math:`p_{x,i}=\frac{1}{v} \sin( \theta_i)\cos( \phi_i)`
+    and :math:`p_{x,i}=\frac{1}{v} \sin( \theta_i)\sin( \phi_i)`.
+
+    """
+    t0 = _value_or_sized_to_array(t0)
+    theta = _value_or_sized_to_array(theta)
+    phi = _value_or_sized_to_array(phi)
+    amp = _value_or_sized_to_array(amp)
+
+    # identify dimensions
+    dt = t[1] - t[0]
+    wcenter = int(len(wav) / 2)
+    nx = np.size(x)
+    ny = np.size(y)
+    nt = np.size(t) + wcenter
+    nevents = np.size(t0)
+
+    # create events
+    d = np.zeros((ny, nx, nt))
+    for ievent in range(nevents):
+        px = np.sin(np.deg2rad(theta[ievent])) * np.cos(np.deg2rad(phi[ievent])) / v
+        py = np.sin(np.deg2rad(theta[ievent])) * np.sin(np.deg2rad(phi[ievent])) / v
+        for iy in range(ny):
+            tevent = t0[ievent] + px * x + py * y[iy]
+            tevent = (tevent - t[0]) / dt
+            itevent = tevent.astype(int)
+            dtevent = tevent - itevent
+            for ix in range(nx):
+                if itevent[ix] < nt - 1 and itevent[ix] >= 0:
+                    d[iy, ix, itevent[ix]] += amp[ievent] * (1 - dtevent[ix])
+                    d[iy, ix, itevent[ix] + 1] += amp[ievent] * dtevent[ix]
+
+    # filter events with certain wavelet
+    d, dwav = _filterdata(d, nt, wav, wcenter)
+    return d, dwav
+
+
+def parabolic3d(
+    x: npt.NDArray,
+    y: npt.NDArray,
+    t: npt.NDArray,
+    t0: Union[float, Tuple[float]],
+    px: Union[float, Tuple[float]],
+    py: Union[float, Tuple[float]],
+    pxx: Union[float, Tuple[float]],
+    pyy: Union[float, Tuple[float]],
+    amp: Union[float, Tuple[float]],
+    wav: npt.NDArray,
+) -> Tuple[npt.NDArray, npt.NDArray]:
+    r"""Parabolic 3D events
+
+    Create 3d parabolic events given intercept time,
+    slowness, curvature, and amplitude of each event.
+
+    Parameters
+    ----------
+    x : :obj:`numpy.ndarray`
+        space axis in x direction
+    y : :obj:`numpy.ndarray`
+        space axis in y direction
+    t : :obj:`numpy.ndarray`
+        time axis
+    t0 : :obj:`tuple` or :obj:`float`
+        intercept time at :math:`x=0` and :math:`y=0` of each parabolic event
+    px : :obj:`tuple` or :obj:`float`
+        slowness of each parabolic event in x direction
+    py : :obj:`tuple` or :obj:`float`
+        slowness of each parabolic event in y direction
+    pxx : :obj:`tuple` or :obj:`float`
+        curvature of each parabolic event
+    amp : :obj:`tuple` or :obj:`float`
+        amplitude of each linear event
+    wav : :obj:`numpy.ndarray`
+        wavelet to be applied to data
+
+    Returns
+    -------
+    d : :obj:`numpy.ndarray`
+        data without wavelet of size
+        :math:`[n_y \times n_x \times n_t]`
+    dwav : :obj:`numpy.ndarray`
+        data with wavelet of size
+        :math:`[n_y \times n_x \times n_t]`
+
+    Notes
+    -----
+    Each event is created using the following relation:
+
+    .. math::
+        t_i(x, y) = t_{0,i} + p_{x,i} x + p_{y,i} x + p_{xx,i} x^2 + p_{yy,i} y^2
+
+    """
+    t0 = _value_or_sized_to_array(t0)
+    px = _value_or_sized_to_array(px)
+    py = _value_or_sized_to_array(py)
+    pxx = _value_or_sized_to_array(pxx)
+    pyy = _value_or_sized_to_array(pyy)
+    amp = _value_or_sized_to_array(amp)
+
+    # identify dimensions
+    dt = t[1] - t[0]
+    wcenter = int(len(wav) / 2)
+    nx = np.size(x)
+    ny = np.size(y)
+    nt = np.size(t) + wcenter
+    nevents = np.size(t0)
+
+    # create events
+    d = np.zeros((ny, nx, nt))
+    for ievent in range(nevents):
+        for iy in range(ny):
+            tevent = (
+                t0[ievent]
+                + px[ievent] * x
+                + py[ievent] * y[iy]
+                + pxx[ievent] * x**2
+                + pyy[ievent] * y[iy] ** 2
+            )
+            tevent = (tevent - t[0]) / dt
+            itevent = tevent.astype(int)
+            dtevent = tevent - itevent
+            for ix in range(nx):
+                if itevent[ix] < nt - 1 and itevent[ix] >= 0:
+                    d[iy, ix, itevent[ix]] += amp[ievent] * (1 - dtevent[ix])
+                    d[iy, ix, itevent[ix] + 1] += amp[ievent] * dtevent[ix]
+
+    # filter events with certain wavelet
+    d, dwav = _filterdata(d, nt, wav, wcenter)
+    return d, dwav
+
+
+def hyperbolic3d(
+    x: npt.NDArray,
+    y: npt.NDArray,
+    t: npt.NDArray,
+    t0: Union[float, Tuple[float]],
+    vrms_x: Union[float, Tuple[float]],
+    vrms_y: Union[float, Tuple[float]],
+    amp: Union[float, Tuple[float]],
+    wav: npt.NDArray,
+):
+    r"""Hyperbolic 3D events
+
+    Create 3d hyperbolic events given intercept time, root-mean-square
+    velocities, and amplitude of each event
+
+    Parameters
+    ----------
+    x : :obj:`numpy.ndarray`
+        space axis in x direction
+    y : :obj:`numpy.ndarray`
+        space axis in y direction
+    t : :obj:`numpy.ndarray`
+        time axis
+    t0 : :obj:`tuple` or :obj:`float`
+        intercept time at :math:`x=0` of each of hyperbolic event
+    vrms_x : :obj:`tuple` or :obj:`float`
+        root-mean-square velocity in x direction for each hyperbolic event
+    vrms_y : :obj:`tuple` or :obj:`float`
+        root-mean-square velocity in y direction for each hyperbolic event
+    amp : :obj:`tuple` or :obj:`float`
+        amplitude of each hyperbolic event
+    wav : :obj:`numpy.ndarray`
+        wavelet to be applied to data
+
+    Returns
+    -------
+    d : :obj:`numpy.ndarray`
+        data without wavelet of size :math:`[n_y \times n_x \times n_t]`
+    dwav : :obj:`numpy.ndarray`
+        data with wavelet of size :math:`[n_y \times n_x \times n_t]`
+
+    Notes
+    -----
+    Each event is created using the following relation:
+
+    .. math::
+        t_i(x, y) = \sqrt{t_{0,i}^2 + \frac{x^2}{v_{\text{rms}_x, i}^2} +
+        \frac{y^2}{v_{\text{rms}_y, i}^2}}
+
+    Note that velocities do not have a physical meaning here (compared to the
+    corresponding :func:`pylops.utils.seismicevents.hyperbolic2d`), they rather
+    simply control the curvature of the hyperboloid along the spatial axes.
+
+    """
+    t0 = _value_or_sized_to_array(t0)
+    vrms_x = _value_or_sized_to_array(vrms_x)
+    vrms_y = _value_or_sized_to_array(vrms_y)
+    amp = _value_or_sized_to_array(amp)
+
+    # identify dimensions
+    dt = t[1] - t[0]
+    wcenter = int(len(wav) / 2)
+    nx = np.size(x)
+    ny = np.size(y)
+    nt = np.size(t) + wcenter
+    nevents = np.size(t0)
+
+    # create events
+    d = np.zeros((ny, nx, nt))
+    for ievent in range(nevents):
+        for iy in range(ny):
+            tevent = np.sqrt(
+                t0[ievent] ** 2
+                + x**2 / vrms_x[ievent] ** 2
+                + y[iy] ** 2 / vrms_y[ievent] ** 2
+            )
+            tevent = (tevent - t[0]) / dt
+            itevent = tevent.astype(int)
+            dtevent = tevent - itevent
+            for ix in range(nx):
+                if itevent[ix] < nt - 1 and itevent[ix] >= 0:
+                    d[iy, ix, itevent[ix]] += amp[ievent] * (1 - dtevent[ix])
+                    d[iy, ix, itevent[ix] + 1] += amp[ievent] * dtevent[ix]
+
+    # filter events with certain wavelet
+    d, dwav = _filterdata(d, nt, wav, wcenter)
+    return d, dwav

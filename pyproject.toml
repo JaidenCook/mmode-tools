@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mmode_tools"
+version = "0.0.1"
+authors = [
+  { name="Jaiden Cook", email="jaiden.cook1@gmail.com" },
+]
+description = "A small example package"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "typer",
+    "numpy",
+    "toml",
+    "astropy",
+    "tqdm",
+    "scipy",
+    "h5py",
+    "healpy",
+    "joblib",
+    "pylops",
+    "pyshtools",
+    "matplotlib",
+    "scikit-image",
+    "mwa_hyperbeam",
+    "ducc0",
+    "cmasher"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.scripts]
+calc-beam-coefficients = "mmode_tools.cli.cli:beamCoApp"
+generate-telescope-config = "mmode_tools.cli.cli:telescopeConfigApp"
+fit-map = "mmode_tools.cli.cli:fitMapApp"
+
+[tool.setuptools.package-data]
+"mmode_tools.data" = ["*.fits","*.toml","*.h5"]
+"mmode_tools.config"= ["*.toml",".txt"]

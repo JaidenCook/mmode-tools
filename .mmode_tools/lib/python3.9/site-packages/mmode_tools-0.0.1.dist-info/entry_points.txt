@@ -1,0 +1,4 @@
+[console_scripts]
+calc-beam-coefficients = mmode_tools.cli.cli:beamCoApp
+fit-map = mmode_tools.cli.cli:fitMapApp
+generate-telescope-config = mmode_tools.cli.cli:telescopeConfigApp
