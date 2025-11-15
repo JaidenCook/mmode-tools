@@ -6,9 +6,6 @@ import h5py as h5
 # Stores the array objects for the different radio telescopes.
 from mmode_tools.interferometers import EDA2array
 
-# TODO: Get rid of this default value. 
-Nant_def = EDA2array.Nant
-
 def split_baseline(baselineIDs):
     """
     Function for determining the antenna IDs from the baseline ID. Baseline
@@ -196,7 +193,7 @@ def make_flag_matrix(Nant,flagInds,flagBlines=None):
     return flagMatrix
 
 
-def write_flags(hf,flagMatrix,Nant=Nant_def,flagBlines=None,
+def write_flags(hf,flagMatrix,flagBlines=None,
                 plotFlags=False):
     """
     Helper function for writing auto-correlation flags to hdf5 files. Saves
@@ -211,8 +208,6 @@ def write_flags(hf,flagMatrix,Nant=Nant_def,flagBlines=None,
     flag_matrix : ndarray bool
         2D boolean numpy array containing the auto-correlation flags. False 
         where flagged.
-    Nant : int, default=Nant_def
-        Number of antennas, used to determine the shape.
     flagBlines : list, tuples, default=None
         List of tuples, containing the antenna ID's for a problem baseline.
     plotFlags : bool, default=False
@@ -225,6 +220,13 @@ def write_flags(hf,flagMatrix,Nant=Nant_def,flagBlines=None,
     None
     """
     import datetime
+
+    if flagMatrix.shape[0] != flagMatrix.shape[1]:
+        # Performing check to make sure the flag matrix is square.
+        errMsg = f'Matrix shape is not square, should be ({Nant},{Nant}).'     
+        raise ValueError(errMsg)
+    
+    Nant = flagMatrix.shape[0]
 
     # Getting the flag indices, so we can get the flag antenna IDs.
     flagInds = np.arange(Nant)[np.diag(flagMatrix)==False]
@@ -259,7 +261,7 @@ def write_flags(hf,flagMatrix,Nant=Nant_def,flagBlines=None,
     print(flagData.attrs['timestamp'])
     
 
-def append_flags(filepath,flagMatrix,Nant=Nant_def,flagBlines=None,
+def append_flags(filepath,flagMatrix,flagBlines=None,
                  overwrite=False):
     """
     Function for appending the autocorrelation flag matrix to the parent hdf5
@@ -272,19 +274,12 @@ def append_flags(filepath,flagMatrix,Nant=Nant_def,flagBlines=None,
     flag_matrix : ndarray bool
         2D boolean numpy array containing the auto-correlation flags. False 
         where flagged.
-    Nant : int, default=Nant_def
-        Number of antennas, used to determine the shape.
 
     Returns
     -------
     None
     """
-
-    if Nant != flagMatrix.shape[0]:
-        # Performing a check to make sure the flag matrix is the appropriate 
-        # size.
-        errMsg = f'Number of antennas {Nant} not equal to matrix shape.'     
-        raise ValueError(errMsg)
+    Nant = flagMatrix.shape[0]
     
     if flagMatrix.shape[0] != flagMatrix.shape[1]:
         # Performing check to make sure the flag matrix is square.
@@ -554,46 +549,3 @@ def plot_autos(lstVec,autos_arr,figaxs=None,mean_auto_vec=None,
     axs.tick_params(axis='x',labelsize=18*fontscale)
     axs.tick_params(axis='y',labelsize=18*fontscale)
 
-
-if __name__ == "__main__":
-
-    from mmode_tools.io import read_LST_VisCube
-    import argparse
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("filepath", 
-                        help="Path and filename for the data hdf5 file.",
-                        type=str)
-    parser.add_argument("--savefigs", 
-                        help="Save plots of the flagged and unflagged ants.",
-                        action="store_true")
-    parser.add_argument("--overwrite", 
-                        help="If flags exist overwrite them.",
-                        action="store_true")
-    
-    args = parser.parse_args()
-
-    filepath = args.filepath
-    print(f'filepath = {filepath}')
-
-    # Get the LST and auto-correlation array.
-    lstVec, autosArr = read_LST_VisCube(filepath,
-                                         return_autos=True,
-                                         verbose=True)
-    
-    plotPath = None
-    if args.savefigs:
-        # If True create a plot directory in the data directory of the flagged
-        # and unflagged antennas.
-        filename = filepath.split('/')[-1]
-        path = filepath.split(filename)[0]
-        plotPath = path + "ant_plots/"
-
-    # Performing standard deviation flag.
-    antFlagInds,_ = flag_autos(autosArr,thresh=3,verbose=True,
-                               save_plots=plotPath)
-
-    # Appending the auto-correlation flags to the hdf5 file.
-    Nant = Nant_def
-    append_flags(filepath,make_flag_matrix(Nant,antFlagInds),
-                 overwrite=args.overwrite)
