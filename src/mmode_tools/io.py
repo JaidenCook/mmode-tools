@@ -8,7 +8,7 @@ from warnings import warn
 import toml
 import os
 from mmode_tools.constants import c,MRO,ONSALA
-from mmode_tools.interferometers import make_radio_array
+
 
 def get_config_directory(pathName=None):
     """
@@ -873,6 +873,8 @@ def read_data_config(configPath,returnDates=False):
     dates : list, optional
         List of dates for the observations.
     """
+    from mmode_tools.interferometers import make_radio_array
+    
     with open(configPath, 'r') as f:
         config = toml.load(f)
         arrFilePaths = config["data"]["file_paths"]
