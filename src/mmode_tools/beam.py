@@ -340,7 +340,6 @@ def analytic_dipole_beam(freq,latRad,L=1,sampling='DH1',lMax=130):
     k = 2*np.pi/lam
     f = analytic_length_func(lam,L=L)
 
-
     if sampling == 'DH1':
         Ncells = int(2*lMax+2)
         raVec = np.linspace(0,2*np.pi,Ncells)
@@ -354,17 +353,13 @@ def analytic_dipole_beam(freq,latRad,L=1,sampling='DH1',lMax=130):
     # lat.
     azGrid,elGrid = radec2azel(raGrid,decGrid,latRad)
     # Calculating the new direction cosines for the RA DEC grid.
-    #lObsVals = np.cos(elGrid)*np.sin(azGrid)
-    #mObsVals = np.cos(elGrid)*np.cos(azGrid)
+    cosTerm = np.cos(elGrid)
+    sinTerm = np.sin(elGrid)
 
-    #elGrid = np.roll(elGrid + np.pi/2,elGrid.shape[1]//2,axis=1)
-    #elGrid = np.roll(elGrid,elGrid.shape[1]//2,axis=1)
-    #elGrid = elGrid + np.pi/2
-    elGrid[elGrid<0] = 0
-
-    #beamTerm = ((np.cos(0.5*k*L*np.cos(elGrid) - \
-    #                    np.cos(0.5*k*L)))/np.sin(elGrid))**2
-    beamTerm = np.sin(elGrid)**2
+    beamTerm = ((np.cos(0.5*k*L*cosTerm) - \
+                        np.cos(0.5*k*L)) /sinTerm)**2
+    #beamTerm = np.sin(elGrid)**2
+    beamTerm[elGrid<=0] = 0
 
     return beamTerm
 
