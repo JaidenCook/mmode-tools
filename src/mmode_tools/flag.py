@@ -310,7 +310,7 @@ def append_flags(filepath,flagMatrix,Nant=Nant_def,flagBlines=None,
             write_flags(hf,flagMatrix,Nant=Nant,flagBlines=flagBlines)
 
 
-def update_flags(badAnts,filepath,Arr,flagBlines=None,clearFlags=False,
+def update_flags(badAnts,filepath,Interferometer,flagBlines=None,clearFlags=False,
                  plotFlags=False,verbose=False):
     """
     Function for updating the flags for EDA2 and MWA covtensor formats. Accepts
@@ -324,7 +324,7 @@ def update_flags(badAnts,filepath,Arr,flagBlines=None,clearFlags=False,
         (not indices) or a numpy array containing the names of bad antennas. 
     filepath : str
         Cov tensor file path and name. 
-    Arr : RadioArray object
+    Interferometer : RadioArray object
         Either MWAPH2array or EDA2array.
     flagBlines : list, tuples, default=None
         List of tuples, containing the antenna ID's for a problem baseline.
@@ -339,8 +339,8 @@ def update_flags(badAnts,filepath,Arr,flagBlines=None,clearFlags=False,
     """
     from mmode_tools.io import read_flags
 
-    Nant = Arr.Nant
-    ArrDict = Arr.antDict
+    Nant = Interferometer.Nant
+    ArrDict = Interferometer.antDict
     
     if isinstance(badAnts,str):
         # Testing ifd string is file.
@@ -390,7 +390,7 @@ def update_flags(badAnts,filepath,Arr,flagBlines=None,clearFlags=False,
                     flagBlines=flagBlines)
 
 
-def apply_auto_flags(visCube,flagMatrix,Nant=Nant_def,reshape=True):
+def apply_auto_flags(visCube,flagMatrix,reshape=True):
     """
     Applies the autocorrelation flags to the visibility data cube. 
     
@@ -400,7 +400,7 @@ def apply_auto_flags(visCube,flagMatrix,Nant=Nant_def,reshape=True):
     Parameters
     ----------
     visCube : ndarray complex64
-        Visibility cube (LST,ant1,ant2).
+        Visibility cube (LST,Nant,Nant).
     flagMatrix : ndarray bool
         2D boolean numpy array containing the auto-correlation flags. False 
         where flagged.
@@ -409,8 +409,8 @@ def apply_auto_flags(visCube,flagMatrix,Nant=Nant_def,reshape=True):
     Returns
     -------
     visCube_flagged : ndarray complex64
-        Contains only the good antennas (LST,ant1_good,ant2_good), where 
-        ant1_good < ant1.
+        Contains only the good antennas (LST,NantGood,NantGood), where 
+        NantGood < Nant.
     """
 
     if visCube[0,:,:].shape != flagMatrix.shape:
