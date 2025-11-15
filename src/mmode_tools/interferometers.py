@@ -455,11 +455,11 @@ class RadioArray:
         if self.telescope is None:
             self.telescope = telescope
 
-        make_config_file(outPath=outPath,Array=self,verbose=verbose,
+        make_config_file(outPath=outPath,Interferometer=self,verbose=verbose,
                          override=override)
 
 
-def make_config_file(outPath=interferometerPath,Array=None,arrayLocs=None,LAT=0,
+def make_config_file(outPath=interferometerPath,Interferometer=None,arrayLocs=None,LAT=0,
                      LON=0,HEIGHT=None,antIDs=None,telescope=None,
                      arrayLayout=None,verbose=False,override=True):
     """
@@ -495,17 +495,17 @@ def make_config_file(outPath=interferometerPath,Array=None,arrayLocs=None,LAT=0,
     None
     """
 
-    if Array is not None:
+    if Interferometer is not None:
         # If array is given use this first.
-        east = Array.east
-        north = Array.north
-        height = Array.height
-        LAT = Array.lat
-        LON = Array.lon
-        telescope = Array.telescope
-        antIDs = Array.antIDs
+        east = Interferometer.east
+        north = Interferometer.north
+        height = Interferometer.height
+        LAT = Interferometer.lat
+        LON = Interferometer.lon
+        telescope = Interferometer.telescope
+        antIDs = Interferometer.antIDs
         arrayLocs = None
-        Nant = Array.Nant
+        Nant = Interferometer.Nant
 
     elif arrayLocs is not None:
         # Case for no array, but east north and heigh given in tuple.
