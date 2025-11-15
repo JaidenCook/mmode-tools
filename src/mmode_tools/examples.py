@@ -11,7 +11,7 @@ beamFringePath = get_config_directory(pathName="beamFringePath")
 covTensorPath = get_config_directory(pathName="covTensorPath")
 
 def load_default_beam_model(LAT=0,pol='I',lMax=541,freq=150e6,
-                            simple_dipole=True):
+                            simple_dipole=True,L=1):
     """
     Function to load in the test model primary beam.
 
@@ -30,7 +30,8 @@ def load_default_beam_model(LAT=0,pol='I',lMax=541,freq=150e6,
 
     if pol == 'I':
         if simple_dipole:
-            beamMap = analytic_dipole_beam(freq,np.radians(LAT),lMax=lMax)
+            beamMap = analytic_dipole_beam(freq,np.radians(LAT),lMax=lMax,
+                                           L=L)
         else:
             beamFileNameXX="beam_model_XX_150MHz.fits"
             beamMapXX = FITS2beam(dataPath.joinpath(beamFileNameXX),
