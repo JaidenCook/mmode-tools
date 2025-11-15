@@ -3,8 +3,6 @@ import matplotlib.pyplot as plt
 import sys,os
 import h5py as h5
 
-# Stores the array objects for the different radio telescopes.
-from mmode_tools.interferometers import EDA2array
 
 def split_baseline(baselineIDs):
     """
