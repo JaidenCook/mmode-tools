@@ -15,6 +15,12 @@ This package is designed to work with any system (MWA, EDA2, LOFAR, LWA for exam
 
 
 ## Installing the Package
+This package is still in development, and I cannot guarantee that it works with all python builds, development is currently with Python version ```3.9.6``` it may work with latter versions, but it does not work with Python version ```3.8```. For those users with older versions, I reccommend a local install of Python ```3.9.6``` using ```pyenv```, their instructions on GitHub are very easy to follow. 
+
+Ensure that you have ```setuptools >= 77.0.3```:
+
+```pip install --upgrade setuptools```
+
 For the users using the MWA beam model, the ```MWA_BEAM_FILE``` parameter in the ```default_config.toml``` is set to "" (an empty string), which is equivalent to using the analytic MWA beam model. If the user has a copy of the FEE beam model ```hdf5``` file, edit this path to point towards model and the FEE beam model should be used in any beam model generation. 
 
 Additionally, the package on first import sets up a bunch of default path locations in the users ```$HOMEDIR``` these can be edited by the user to change the path configuration. Do this before installing in the package. 
@@ -28,6 +34,7 @@ pip install .
 Alternatively install in developer mode:
 
 ```
+pip install --upgrade pip
 pip install -e .
 ```
 
