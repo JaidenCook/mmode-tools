@@ -364,8 +364,6 @@ def analytic_dipole_beam(freq,latRad,L=1,sampling='DH1',lMax=130):
     return beamTerm
 
 
-
-
 def MWA_dipolebeam(freq,lat,Ncells,pol='X',dipoleInd=10):
     """
     Function to generate the MWA single dipole mode equatorial cartesian ('CAR') 
