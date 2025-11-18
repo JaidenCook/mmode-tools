@@ -1,2 +1,4 @@
 **.mmode_tools/
 *.pyc
+*.python-version
+**mmode_tools.egg-info/
