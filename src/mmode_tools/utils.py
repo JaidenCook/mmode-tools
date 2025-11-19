@@ -56,7 +56,7 @@ def load_alm_tensor_list(beamFilePaths,telescopes,flagMatrixDict,
 
 def load_calc_mmode_tensor(arrFilePaths,Arrays,telescopes,stokesList,
                            flagMatrixDict,lMax=200,freq=160,verbose=False,
-                           diffVis=False,returnAntPairs=False):
+                           diffVis=False,returnAntPairs=False,flagMmodes=True):
     """
     Parameters
     ----------
@@ -122,7 +122,10 @@ def load_calc_mmode_tensor(arrFilePaths,Arrays,telescopes,stokesList,
             # If this is not None, this will set all m > mmax to zero.
             rMatrix = None
         else:
-            rMatrix = rMatrixList[i]
+            if flagMmodes:
+                rMatrix = rMatrixList[i]
+            else:
+                rMatrix = None
         tempMmodeTensor = vis2mmode_DFT(covTensorList[i],lstVecList[i],
                                         np.where(lstVecList[i]>0)[0],Ncells,
                                         rMatrix=rMatrix,plotTest=False)
@@ -287,7 +290,7 @@ def calc_uniform_weights(arrFilePaths,Arrays,telescopes,verbose=False):
     return weightsVec
 
 def load_data(configFilePath,lMax=160,freq=160,calcWeights=False,
-              uniform=False,filterParams=None,verbose=False):
+              uniform=False,filterParams=None,verbose=False,flagMmodes=True):
     """
 
     Parameters
@@ -299,6 +302,7 @@ def load_data(configFilePath,lMax=160,freq=160,calcWeights=False,
     uniform=False,
     filterParams=None,
     verbose=False
+    flagMmodes=True
 
     Returns
     -------
@@ -321,7 +325,8 @@ def load_data(configFilePath,lMax=160,freq=160,calcWeights=False,
 
     mmodeTensor = load_calc_mmode_tensor(arrFilePaths,Arrays,telescopes,
                                          stokesList,flagMatrixDict,lMax=lMax,
-                                         freq=freq,verbose=verbose)
+                                         freq=freq,verbose=verbose,
+                                         flagMmodes=flagMmodes)
     # Loading the alm coefficients.
     almTensorList= load_alm_tensor_list(beamFringeFilePaths,telescopes,
                                         flagMatrixDict,lMax=lMax,
