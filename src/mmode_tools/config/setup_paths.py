@@ -40,6 +40,12 @@ def copy_array_data_files():
             destPath = HOMEDIR + interferometrPath + file
             if not os.path.exists(destPath):
                 shutil.copy2(srcPath,destPath)
+        # Example interferometer configuration file.
+        if file == "N32_config.toml":
+            srcPath = dataPath.joinpath(file)
+            destPath = HOMEDIR + interferometrPath + file
+            if not os.path.exists(destPath):
+                shutil.copy2(srcPath,destPath)
         # Getting the example covariance tensors.
         if file.endswith('.toml') or file.endswith('.h5'):
             srcPath = dataPath.joinpath(file)
