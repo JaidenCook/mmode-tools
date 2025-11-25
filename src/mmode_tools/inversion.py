@@ -381,6 +381,46 @@ def invert_CGLS_multi_pylops_assym(almTensorList,mmodeTensor,
     
     return skyCoTensor
 
+def calc_reg_matrix(regParam,m,lmax):
+    """
+    Function to calculate the regularisation matrix. This function can take an 
+    input 2D array, 1D array or single value. Returns diagonal matrix for given
+    m mode inversion step, where each diagonal element is the regularisaton 
+    parameter for a given l-degree value. For now the regularisation matrix is a
+    diagonal matrix. Future versions might include derivative operators.
+
+    Parameters
+    ----------
+    regParam : float, or np.ndarray
+        Either a single value, a 1D vector of length lmax, or a 2D array 
+        representing the regularisation for each (l,m).
+    m : int
+        The m-mode value.
+    lmax : int
+        The lmax value.
+
+    Returns
+    -------
+    R : np.ndarray
+        Regularisation matrix. 
+    """
+
+    if isinstance(regParam,np.ndarray):
+        if len(regParam.shape) > 1:
+            # Assuming that the regularisation is a 2D arraywith shape (l+1,l+1):
+            if regParam.shape != (lmax+1,lmax+1):
+                raise ValueError(f'regParam shape should be {(lmax+1,lmax+1)} not {regParam.shape}.')
+            R = np.diag(regParam[m:,m])
+        elif len(regParam.shape) == 1:
+            # Assuming that 1D vector has length l+1, different param per m.
+            if regParam.size != (lmax+1):
+                raise ValueError(f'regParam size should be {(lmax+1)} not {regParam.size}')
+            R = np.diag(np.ones((lmax+1)-m)*regParam[m])
+    elif isinstance(regParam,float):
+        R = np.diag(np.ones(lmax+1-m)*regParam)
+    
+    return R
+
 def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
                             verbosity=0,
                             njobs=1,damp=0.5,max_nbytes=100e6,
@@ -426,20 +466,11 @@ def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
     if len(mmodeTensor.shape) > 2:
         mmodeTensor = mmodeTensor[:,0,:]
 
-    # Allowing for different dampening coefficients for each m-mode.
-    if isinstance(damp,float):
-        damp = np.ones(lmax+1)*damp
-    elif isinstance(damp,np.ndarray):
-        print('Using dampVector.')
-        if len(damp.shape) > 1:
-            raise ValueError("Damp array should have dimensions of 1.")
-        if len(damp) != (lmax+1):
-            raise ValueError(f"Damp array should have length of {lmax+1}.")
-
     # Initialising the output sky coefficients.
     skyCoTensor = np.zeros([lmax+1,lmax+1],dtype=np.complex64) #slm
 
-    # Initialising lists for data sets and baseline IDs.
+    # Initialising the lmax list for each instrument, can be provided or
+    # calculated from the beam fringe coefficient matrices.
     if np.any(lMaxVec):
         if len(lMaxVec) != len(almTensorList):
             raise ValueError('len(lMaxVec) != len(almTensorList)')
@@ -448,17 +479,17 @@ def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
                             for almTensor in almTensorList])
 
     NbaseTot = 0
-    for i,almTensor in enumerate(almTensorList):
+    for almTensor in almTensorList:
         # Determining the total number of baselines.
         NbaseTot += almTensor.shape[0]
 
     # Performing check.
     if lmax > np.max(lMaxVec):
-         errMsg = f"lmax {lmax} > {np.max(lMaxVec)}, must be strictly smaller"+\
+         warningMsg = f"lmax {lmax} > {np.max(lMaxVec)}, must be strictly smaller"+\
                   f" or equal. Setting lmax to {np.max(lMaxVec)}"
-         warn(errMsg)
+         warn(warningMsg)
 
-    def invert_permmode(m,epsilon=damp):
+    def invert_permmode(m,regParam=damp):
         # Initialising total temp beam fringe tensor.
         Bm = np.zeros((NbaseTot,(lmax+1)-m),dtype=np.complex64)
 
@@ -477,10 +508,13 @@ def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
                 # For assymetric inversion, this is the point where one array
                 # no longer has data, so we just assume it is zero.
                 pass
-
             NbaseSum += Nbase
 
+        # The mmode visibility data vector.
         v = mmodeTensor[:,m]
+        # Creating the regularization matrix.
+        R = calc_reg_matrix(regParam,m,lmax)
+
         if np.any(weights):
             if weights.size != Bm.shape[0]:
                 raise ValueError(f'Weights shape {weights.size} should match B' +\
@@ -489,9 +523,7 @@ def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
                 Bm = Bm*weights[:,None]
                 v = v*weights
 
-        R = np.diag(epsilon[m]*np.ones(Bm.shape[1]))
         Lam = np.array(np.matrix(Bm).H) @ Bm + R
-        #Lam = np.array(np.matrix(Bm).H) @ Bm + epsilon[m:]*np.eye(Bm.shape[1])
         Lam_inv = np.linalg.inv(Lam)
         del Lam
 
@@ -515,10 +547,10 @@ def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
     skyCoTensor = restore_negmodes(skyCoTensor)
 
     if np.any(np.isinf(skyCoTensor)):
-        print('Overflow warning set coefficient values to inf. Setting to 0.')
+        warn('Overflow warning set coefficient values to inf. Setting to 0.')
         skyCoTensor[np.isinf(skyCoTensor)] = 0
     if np.any(np.isnan(skyCoTensor)):
-        print('Overflow warning set coefficient values to nan. Setting to 0.')
+        warn('Overflow warning set coefficient values to nan. Setting to 0.')
         skyCoTensor[np.isnan(skyCoTensor)] = 0
     
     return skyCoTensor
@@ -526,7 +558,7 @@ def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
 def filter_coefficients(coeffs,lmax=200,lcut=130,lwin=None,
                         filterType='blackmanharris'):
     """
-    Apply Blackman harris filter to input coefficients.
+    Apply filter to input coefficients.
 
     Parameters
     ----------
@@ -544,24 +576,33 @@ def filter_coefficients(coeffs,lmax=200,lcut=130,lwin=None,
     None
     """
     ### TODO: Add in more filter types.
-    if filterType != 'blackmanharris':
-        raise ValueError(f"Filter type {filterType} not implemented, only " +\
-                         "blackmanharris is available.")
-    else:
-        from scipy.signal.windows import blackmanharris
-        filterFunc = blackmanharris
+    N = coeffs.shape[1]
+    filterVec = np.ones(N)
+    
     if lcut > lmax:
         errMsg = f"lcut > lmax, should strictly be less."
         raise ValueError(errMsg)
-
-    if (lwin == None) or (lwin > int(lmax-lcut)):
-        lwin = int(lmax-lcut)
     
-    N = coeffs.shape[1]
-    filterBH = np.ones(N)
-    filterBH[lcut:lcut+lwin] *= filterFunc(2*lwin)[-lwin:]
-    filterBH[lcut+lwin:] = 0
+    if (filterType != 'blackmanharris') and (filterType != 'ones'):
+        raise ValueError(f"Filter type {filterType} not implemented, only " +\
+                         "blackmanharris or ones is available.")
+    elif filterType == 'blackmanharris':
+        from scipy.signal.windows import blackmanharris
+
+        if (lwin == None) or (lwin > int(lmax-lcut)):
+            lwin = int(lmax-lcut)
+        
+        filterFunc = blackmanharris
+        filterVec[lcut+1:lcut+1+lwin] *= filterFunc(2*lwin)[-lwin:]
+        filterVec[lcut+1+lwin:] = 0
+        
+    elif filterType == 'ones':
+        # This is a basic filter that just sets all coeffs above an lmax to 
+        # zero.
+        filterVec[lmax+1:] = 0
+
+    
     # Apply the filter to all coefficients.
-    coeffs[...] = coeffs*filterBH[None,:,None]
+    coeffs[...] = coeffs*filterVec[None,:,None]
 
     return None
