@@ -143,7 +143,7 @@ def beam_coefficients_main(
             "loading default beam model.")
 
             beamMap = load_default_beam_model(LAT=np.radians(arrayLat),
-                                              pol=pol,lMax=lmax)
+                                              pol=pol,lMax=lmax,freq=freq)
         else:
             # Load in the primary beam map form the fits file.
             print(f"Ncells = {Ncells}")
