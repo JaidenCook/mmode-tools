@@ -351,7 +351,8 @@ def load_data(configFilePath,lMax=160,freq=160,calcWeights=False,
     return mmodeTensor,almTensorList,weights
 
 def data2map(mmodeTensor,almTensorList,weights,invert=invert_tikh_multi_assym,
-             lMax=160,mMax=None,damp=0.01,rtol=1e-4,verbosity=10,njobs=1,
+             lMax=160,mMax=None,damp=0.01,rtol=1e-4,lMaxVec=None,
+             verbosity=10,njobs=1,
              Niter=10,returnGrid=False,returnCoeffs=False,**kwargs):
     """
     
@@ -365,6 +366,7 @@ def data2map(mmodeTensor,almTensorList,weights,invert=invert_tikh_multi_assym,
     mMax=None,
     damp=0.01,
     rtol=1e-4,
+    lMaxVec=None,
     verbosity=10,
     njobs=1,
     Niter=10,
@@ -384,12 +386,13 @@ def data2map(mmodeTensor,almTensorList,weights,invert=invert_tikh_multi_assym,
     if not isinstance(lMax,int):
         lMax = int(lMax)
 
-    lVec = [alm.shape[-1]-1 for alm in almTensorList]
+    if lMaxVec is None:
+        lMaxVec = [alm.shape[-1]-1 for alm in almTensorList]
 
     # Performing the inversion step.
     skyCoTensor=invert(almTensorList,np.conj(mmodeTensor),lmax=lMax,mmax=mMax,
                        rtol=rtol,verbosity=verbosity,damp=damp,njobs=njobs,
-                       lMaxVec=lVec,Niter=Niter,weights=weights,**kwargs)
+                       lMaxVec=lMaxVec,Niter=Niter,weights=weights,**kwargs)
     #
     sphericalCoeffs = SHCoeffs.from_array(skyCoTensor,normalization='ortho',
                                           csphase=-1)
