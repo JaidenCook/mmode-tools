@@ -282,11 +282,10 @@ class RadioArray:
             # are assumed to not be flagged in the flagMatrix case.
             if np.any(flagMatrix):
                 boolVec = flagMatrix
-                N = boolVec[boolVec].size
             else:
                 # This assumes that antenna flagging has occurred, but should 
                 # work if no antennas have been already flagged.
-                boolVec = np.ones(Array.uu_m.size).astype(bool)    
+                boolVec = np.ones_like(Array.uu_m).astype(bool)
         else:
             # Calculate the indices of the auto's and set these to false in the
             # flag matrix. Alternatively use np.diag_indices().
@@ -296,7 +295,8 @@ class RadioArray:
                 boolVec = flagMatrix
             else:
                 boolVec = noAutoInds == False
-            N = boolVec[boolVec].size
+
+        N = boolVec[boolVec].size
             
         blines = np.zeros((N,3))
         antPairs = np.zeros((N,2))
