@@ -12,6 +12,37 @@ from mmode_tools.vistools import vis2mmode_DFT
 from mmode_tools.inversion import invert_tikh_multi_assym,filter_coefficients
 from mmode_tools.constants import c
 
+def get_bline_antIDs(configFilePath,flag=True,returnAntIDs=True,
+                     returnBlines=True):
+    """
+    
+    """
+    arrFilePaths,Arrays,telescopes,_,_ = read_data_config(configFilePath,
+                                                          returnDates=False)
+
+    blineList = []
+    antPairsList = []
+    for i,telescope in enumerate(telescopes):
+        if flag:
+            _,_,flagMatrixTemp,_ = read_flags(arrFilePaths[i])
+            flagMatrixTemp[np.diag_indices(flagMatrixTemp.shape[0])] = False
+        else:
+            flagMatrixTemp = None
+        
+        # Getting the baselines for each of the arrays.  
+        blines,antPairs = RadioArray.get_baselines(Arrays[telescope],
+                                                   flagMatrix=flagMatrixTemp)
+        #
+        blineList.append(blines)
+        antPairsList.append(antPairs)
+
+    if returnAntIDs and returnBlines:
+        return blineList,blineList
+    elif returnBlines == False and returnAntIDs:
+        return blineList
+    elif returnBlines and returnAntIDs == False:
+        return blineList
+
 
 def load_alm_tensor_list(beamFilePaths,telescopes,flagMatrixDict,
                          lMax=160,filterParams=None):
