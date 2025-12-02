@@ -70,7 +70,7 @@ def load_model_map(freq=150e6):
     Parameters
     ----------
     freq : float
-        Frequency in MHz.
+        Frequency in Hz.
 
     Returns
     -------
