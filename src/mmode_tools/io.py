@@ -956,14 +956,20 @@ def map2fits(skyMap,freq,outFilePath,skyCoeffs=None,verbose=False):
             skyCoeffs = skyCoeffs[0,:,:]
         skyCoeffsTable = Table({'flat_positive_coeffs_real': skyCoeffs.flatten().real,
                                 'flat_positive_coeffs_imag': skyCoeffs.flatten().imag})
+        # Create HDUs
+        # Sky map has to be flipped about the y axis. 
+        skyMapHDU = fits.PrimaryHDU(data=skyMap[::,::-1],header=header)
+        skyCoeffsHDU = fits.BinTableHDU(skyCoeffsTable,name='SKY_COEFFS')
 
-    # Create HDUs
-    # Sky map has to be flipped about the y axis. 
-    skyMapHDU = fits.PrimaryHDU(data=skyMap[::,::-1],header=header)
-    skyCoeffsHDU = fits.BinTableHDU(skyCoeffsTable,name='SKY_COEFFS')
+        # Create HDUList
+        hdul = fits.HDUList([skyMapHDU,skyCoeffsHDU])
+    else:
+        # Create HDUs
+        # Sky map has to be flipped about the y axis. 
+        skyMapHDU = fits.PrimaryHDU(data=skyMap[::,::-1],header=header)
 
-    # Create HDUList
-    hdul = fits.HDUList([skyMapHDU,skyCoeffsHDU])
+        # Create HDUList
+        hdul = fits.HDUList([skyMapHDU])
 
     if verbose:
         print("Printing hdu and header information...")
