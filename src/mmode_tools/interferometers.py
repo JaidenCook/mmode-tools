@@ -131,8 +131,7 @@ class RadioArray:
             Flag matrix, has shape (Nant,Nant).
         """
         from mmode_tools.flag import make_flag_matrix
-
-        flagMatrix = make_flag_matrix(flagInds,flagBlines=flagBlines)
+        flagMatrix = make_flag_matrix(self.Nant,flagInds,flagBlines=flagBlines)
 
         self.flagMatrix = flagMatrix
 
@@ -159,7 +158,8 @@ class RadioArray:
         except AttributeError: 
             # If flagIDs doesn't exist, then apply flags and create the attribute.
             pass
-        self.goodAntIDs = self.antIDs[goodInds]
+        #self.goodAntIDs = self.antIDs[goodInds]
+        self.goodAntIDs = list(np.array(self.antIDs)[goodInds])
         # Performing the flagging.
         self.east = self.east[goodInds]
         self.north = self.north[goodInds]
