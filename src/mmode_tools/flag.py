@@ -149,7 +149,7 @@ def flag_autos(autosArr,thresh=3,verbose=False,plotFlags=False,
     return antFlagInds,antGoodInds
 
 
-def make_flag_matrix(Nant,flagInds,flagBlines=None):
+def make_flag_matrix(Nant,flagInds,flagBlines=None,flagAutos=True):
     """
     Takes input autocorrelation antenna flag indices and returns a flag
     matrix.
@@ -187,6 +187,9 @@ def make_flag_matrix(Nant,flagInds,flagBlines=None):
             for antPair in flagBlines:
                 flagMatrix[antPair[0],antPair[1]] = False
                 flagMatrix[antPair[1],antPair[0]] = False
+
+    if flagAutos:
+        flagMatrix[np.diag_indices(Nant)] = False
 
     return flagMatrix
 
