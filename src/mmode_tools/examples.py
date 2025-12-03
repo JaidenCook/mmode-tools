@@ -85,7 +85,10 @@ def load_model_map(freq=150e6):
     # Frequency scaling.
     scale = (freq/408e6)**(-2.55)
     with fits.open(haslamPath) as hdu:
-        haslamMap = hdu[0].data[:,:][0,:,:]*scale
+        if len(hdu[0].data.shape) == 2:
+            haslamMap = hdu[0].data[:,:]*scale
+        elif len(hdu[0].data.shape) == 3:
+            haslamMap = hdu[0].data[:,:][0,:,:]*scale
         
     return haslamMap
 
