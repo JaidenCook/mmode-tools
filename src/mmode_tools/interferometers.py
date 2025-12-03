@@ -109,6 +109,33 @@ class RadioArray:
         self.lat = arrayLat
         self.lon = arrayLon
 
+    def calc_flag_matrix(self,flagInds,flagBlines=None):
+        """
+        Takes input autocorrelation antenna flag indices and returns a flag
+        matrix.
+
+        Parameters
+        ----------
+        Nant : int
+            Number of antennas (not the number of flagged antennas.)
+        flagInds : ndarray int
+            List of flag indices for antennas. Not a list of antenna names. Must be
+            zero indexed.
+        flagBlines : list, tuples, default=None
+            List of tuples, containing the antenna ID's for a problem baseline.
+
+
+        Returns
+        -------    
+        flagMatrix : ndarray bool
+            Flag matrix, has shape (Nant,Nant).
+        """
+        from mmode_tools.flag import make_flag_matrix
+
+        flagMatrix = make_flag_matrix(flagInds,flagBlines=flagBlines)
+
+        self.flagMatrix = flagMatrix
+
     def apply_flags(self,goodInds):
         """
         Flag antennas.
