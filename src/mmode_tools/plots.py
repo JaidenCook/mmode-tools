@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 from matplotlib.colors import AsinhNorm,Normalize,LogNorm
+import cmasher as cmr
 
 def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
                           scale='linear',title=None,xlim=None,ylim=None):
@@ -79,7 +80,7 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
 def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
                      vmin=None,vmax=None,linear_width=10,plotreal=False,
                      plotimag=False,clab=None,title=None,fullPlot=True,
-                     **kwargs):
+                     add_contours=False,**kwargs):
     """
     Generates coefficient plots, which are collquially referred to as teepee 
     plots.
@@ -180,12 +181,29 @@ def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
     axs.set_title(title)
     im = axs.imshow(image,cmap=cmap,norm=norm,aspect='auto',
                     extent=extent,**kwargs)
+    cb = fig.colorbar(im,ax=axs,aspect=40,label=clab,
+                        extend=extend)
+    if add_contours:
+        colorList = cmr.take_cmap_colors('cmr.neutral_r',5,return_fmt='hex')
+        fmt = matplotlib.ticker.LogFormatterMathtext()
+        fmt.create_dummy_axis()
+
+        logMax = (10**int(np.log10(image.max())))
+        Nlevels = 5
+        levels = np.logspace(-Nlevels,-1,Nlevels)*logMax
+
+        if fullPlot:
+            Larr,Marr = np.meshgrid(np.arange(lmax+1),np.arange(-lmax,lmax+1))
+        else:
+            Larr,Marr = np.meshgrid(np.arange(lmax+1),np.arange(0,lmax+1))
+        CS = axs.contour(Marr,Larr,coeff_Arr.T,levels=levels,
+                        colors=colorList,alpha=1)
+        axs.clabel(CS,fontsize=12,fmt=fmt)
+        cb.add_lines(levels=levels,colors=colorList,
+                     linewidths=[2,2,2,2,2])
 
     axs.set_xlabel(r'Spherical harmonic order $m$',fontsize=14)
     axs.set_ylabel(r'Spherical harmonic degree $\ell$',fontsize=14)
-
-    _ = fig.colorbar(im,ax=axs,aspect=40,label=clab,
-                      extend=extend)
 
 
 def plot_equatorial_map(skyMap,lon=None,lat=None,figsize=(16,10),norm='linear',
