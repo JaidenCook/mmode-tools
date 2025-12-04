@@ -78,7 +78,8 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
 
 def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
                      vmin=None,vmax=None,linear_width=10,plotreal=False,
-                     plotimag=False,clab=None,title=None,**kwargs):
+                     plotimag=False,clab=None,title=None,fullPlot=True,
+                     **kwargs):
     """
     Generates coefficient plots, which are collquially referred to as teepee 
     plots.
@@ -112,7 +113,10 @@ def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
     if np.any(figaxs):
         fig,axs = figaxs
     else:
-        fig,axs = plt.subplots(1,figsize=(6,8))
+        if fullPlot:
+            fig,axs = plt.subplots(1,figsize=(6,8))
+        else:
+            fig,axs = plt.subplots(1,figsize=(9,8))
 
     # Determining the normalisation.
     if norm == 'asinh':
@@ -132,11 +136,22 @@ def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
 
     # Combining the negative and positive mmodes together.
     if np.any(lmax):
-        coeff_Arr = np.hstack((coeffs[0,:lmax+1,:lmax+1][:,::-1],
-                               coeffs[1,:lmax+1,1:lmax+1]))
+        if fullPlot:
+            coeff_Arr = np.hstack((coeffs[0,:lmax+1,:lmax+1][:,::-1],
+                                coeffs[1,:lmax+1,1:lmax+1]))
+        else:
+            coeff_Arr = coeffs[0,:lmax+1,:lmax+1]
     else:
-        coeff_Arr = np.hstack((coeffs[0,:,:][:,::-1],coeffs[1,:,1:]))
+        if fullPlot:
+            coeff_Arr = np.hstack((coeffs[0,:,:][:,::-1],coeffs[1,:,1:]))
+        else:
+            coeff_Arr = coeffs[0,:,:]
         lmax = coeff_Arr.shape[0]-1
+
+    if fullPlot:
+        extent=[-lmax,lmax,lmax,0]
+    else:
+        extent=[0,lmax,lmax,0]
 
     #
     if plotreal and not(plotimag):
@@ -164,7 +179,7 @@ def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
 
     axs.set_title(title)
     im = axs.imshow(image,cmap=cmap,norm=norm,aspect='auto',
-                    extent=[-lmax,lmax,lmax,0],**kwargs)
+                    extent=extent,**kwargs)
 
     axs.set_xlabel(r'Spherical harmonic order $m$',fontsize=14)
     axs.set_ylabel(r'Spherical harmonic degree $\ell$',fontsize=14)
