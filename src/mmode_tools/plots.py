@@ -167,7 +167,7 @@ def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
                     extent=[-lmax,lmax,lmax,0],**kwargs)
 
     axs.set_xlabel(r'Spherical harmonic order $m$',fontsize=14)
-    axs.set_ylabel(r'Spherical harmonic degree $l$',fontsize=14)
+    axs.set_ylabel(r'Spherical harmonic degree $\ell$',fontsize=14)
 
     _ = fig.colorbar(im,ax=axs,aspect=40,label=clab,
                       extend=extend)
