@@ -4,32 +4,6 @@ import sys,os
 import h5py as h5
 
 
-def split_baseline(baselineIDs):
-    """
-    Function for determining the antenna IDs from the baseline ID. Baseline
-    ID is determined by ant1*256 + ant2.
-
-    Parameters
-    ----------
-    baselineIDs : ndarray
-        Numpy array containing the baseline IDs (ant1*256+ant2).
-
-    Returns
-    -------
-    ant1 : ndarray
-        Numpy array containing the the antenna1 ID.
-    ant2 : ndarray
-        Numpy array containing the the antenna2 ID.
-    """    
-    if np.max(baselineIDs) >= 65536:
-        ant1 = ((baselineIDs - 65536) // 2048).astype(int)
-        ant2 = ((baselineIDs - 65536) % 2048).astype(int)
-    else:
-        ant1 = (baselineIDs // 256).astype(int)
-        ant2 = (baselineIDs % 256).astype(int)
-    return ant1,ant2
-
-
 def flag_autos(autosArr,thresh=3,verbose=False,plotFlags=False,
                plot_ants=False,save_plots=None):
     """
