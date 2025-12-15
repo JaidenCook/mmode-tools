@@ -37,9 +37,9 @@ def get_bline_antIDs(configFilePath,flag=True,returnAntIDs=True,
         antPairsList.append(antPairs)
 
     if returnAntIDs and returnBlines:
-        return blineList,blineList
+        return blineList,antPairsList
     elif returnBlines == False and returnAntIDs:
-        return blineList
+        return antPairsList
     elif returnBlines and returnAntIDs == False:
         return blineList
 
