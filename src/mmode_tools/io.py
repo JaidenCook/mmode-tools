@@ -227,7 +227,7 @@ def writeCovTensor(lstVec,covTensor,tVecGPS,filePath,flagInds=None,
     print(f"File saved to {filePath}")
     if np.any(flagInds):
         flagMatrix = make_flag_matrix(Nant,flagInds,flagBlines=flagBlines)
-        append_flags(filePath,flagMatrix,Nant=Nant,flagBlines=flagBlines,
+        append_flags(filePath,flagMatrix,flagBlines=flagBlines,
                      overwrite=overwrite)
         print('Flags written to file...')
     else:
@@ -245,7 +245,7 @@ def writeCovTensor(lstVec,covTensor,tVecGPS,filePath,flagInds=None,
             flagMatrix = make_flag_matrix(Nant,None,flagBlines=flagBlines)
 
         # Appending the flags.
-        append_flags(filePath,flagMatrix,Nant=Nant,flagBlines=flagBlines,
+        append_flags(filePath,flagMatrix,flagBlines=flagBlines,
                      overwrite=overwrite)
         print('Flags written to file...')
 
