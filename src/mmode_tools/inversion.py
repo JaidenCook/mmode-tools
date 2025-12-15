@@ -542,6 +542,9 @@ def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
     _ = Parallel(n_jobs=njobs,require='sharedmem',max_nbytes=max_nbytes,
                  verbose=verbosity)(delayed(invert_permmode)(m) \
                                          for m in range(0,mmax))
+    #from tqdm import tqdm
+    #for m in tqdm(range(0,mmax)):
+    #    invert_permmode(m)
     
     # Restoring the negartive m-modes.
     skyCoTensor = restore_negmodes(skyCoTensor)
