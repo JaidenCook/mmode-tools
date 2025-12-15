@@ -592,7 +592,7 @@ def read_LST_VisCube(filepath,returnAutos=False,applyFlags=True,flagMatrix=None,
                 visCube = apply_flags(visCube,flagMatrix)
             except KeyError:
                 # Note apply_auto_flags reshapes the visCube arr.
-                visCube = apply_auto_flags(visCube,flagMatrix,Nant=Nant,
+                visCube = apply_auto_flags(visCube,flagMatrix,
                                            reshape=reshape)
             print('Flags applied...')
 
