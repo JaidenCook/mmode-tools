@@ -2,7 +2,6 @@ import numpy as np
 import astropy.io.fits as fits
 from mmode_tools.beam import radec2azel
 from mmode_tools.flag import apply_auto_flags,apply_flags
-from mmode_tools.utils import split_baseline
 from tqdm import tqdm
 import h5py as h5
 from warnings import warn
@@ -276,8 +275,9 @@ def read_uvfits(filepath,returnuv=False):
         Complex array containing the visibility information.
     """
     from astropy.io import fits
+    from mmode_tools.utils import split_baseline
+    from mmode_tools.constants import c
     
-    c = 299792458 # speed of light m/s
     with fits.open(filepath) as hdu:
         #
         uvTable = hdu[0].data
