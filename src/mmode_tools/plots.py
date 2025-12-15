@@ -80,7 +80,8 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
 def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
                      vmin=None,vmax=None,linear_width=10,plotreal=False,
                      plotimag=False,clab=None,title=None,fullPlot=True,
-                     add_contours=False,**kwargs):
+                     add_contours=False,colorBar=True,returnIm=False,
+                     fontsize=14,**kwargs):
     """
     Generates coefficient plots, which are collquially referred to as teepee 
     plots.
@@ -181,14 +182,17 @@ def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
     axs.set_title(title)
     im = axs.imshow(image,cmap=cmap,norm=norm,aspect='auto',
                     extent=extent,**kwargs)
-    cb = fig.colorbar(im,ax=axs,aspect=40,label=clab,
-                        extend=extend)
+    
+    if colorBar:
+        cb = fig.colorbar(im,ax=axs,aspect=40,label=clab,
+                            extend=extend)
+    
     if add_contours:
         colorList = cmr.take_cmap_colors('cmr.neutral_r',5,return_fmt='hex')
         fmt = matplotlib.ticker.LogFormatterMathtext()
         fmt.create_dummy_axis()
 
-        logMax = (10**int(np.log10(image.max())))
+        logMax = (10**int(np.log10(vmax)))
         Nlevels = 5
         levels = np.logspace(-Nlevels,-1,Nlevels)*logMax
 
@@ -199,11 +203,19 @@ def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
         CS = axs.contour(Marr,Larr,coeff_Arr.T,levels=levels,
                         colors=colorList,alpha=1)
         axs.clabel(CS,fontsize=12,fmt=fmt)
-        cb.add_lines(levels=levels,colors=colorList,
-                     linewidths=[2,2,2,2,2])
+        if colorBar:
+            cb.add_lines(levels=levels,colors=colorList,
+                        linewidths=[2,2,2,2,2])
 
-    axs.set_xlabel(r'Spherical harmonic order $m$',fontsize=14)
-    axs.set_ylabel(r'Spherical harmonic degree $\ell$',fontsize=14)
+    #axs.set_xlabel(r'Spherical harmonic order $m$',fontsize=fontsize)
+    #axs.set_ylabel(r'Spherical harmonic degree $\ell$',fontsize=fontsize)
+    axs.set_xlabel(r'$m$',fontsize=fontsize)
+    axs.set_ylabel(r'$\ell$',fontsize=fontsize)
+    axs.set_xticklabels(axs.get_xticks().astype(int),fontsize=fontsize-2)
+    axs.set_yticklabels(axs.get_yticks().astype(int),fontsize=fontsize-2)
+
+    if returnIm:
+        return im
 
 
 def plot_equatorial_map(skyMap,lon=None,lat=None,figsize=(16,10),norm='linear',
