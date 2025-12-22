@@ -267,7 +267,7 @@ def append_flags(filepath,flagMatrix,flagBlines=None,
             _ = hf['flags']['autoFlags'].shape
         except KeyError:
             # If they don't exist append them to the file.
-            write_flags(hf,flagMatrix,Nant=Nant,flagBlines=flagBlines)
+            write_flags(hf,flagMatrix,flagBlines=flagBlines)
             
             # If there were no prior flags set overwrite to default, incase it
             # was set to True.
@@ -277,7 +277,7 @@ def append_flags(filepath,flagMatrix,flagBlines=None,
         with h5.File(filepath,'a') as hf:
             # If flags exist, and overwrite is True, create new flags.
             del hf['flags']['autoFlags']
-            write_flags(hf,flagMatrix,Nant=Nant,flagBlines=flagBlines)
+            write_flags(hf,flagMatrix,flagBlines=flagBlines)
 
 
 def update_flags(badAnts,filepath,Interferometer,flagBlines=None,clearFlags=False,
@@ -356,7 +356,7 @@ def update_flags(badAnts,filepath,Interferometer,flagBlines=None,clearFlags=Fals
             del hf['flags']['autoFlags']
         except KeyError:
             pass
-        write_flags(hf,newFlagMatrix,Nant=Nant,plotFlags=plotFlags,
+        write_flags(hf,newFlagMatrix,plotFlags=plotFlags,
                     flagBlines=flagBlines)
 
 
