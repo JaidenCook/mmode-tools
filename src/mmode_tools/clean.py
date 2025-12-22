@@ -736,6 +736,7 @@ def make_restored_map(residDirtyMap,modelMap,paramsArr,xygrid,
     else:
         return restoredMap
 
+
 def calc_psf_weights_matrix(m,B,almTensorList,lMaxVec,lMax=None,damp=0.01,
                             weights=None):
     """
@@ -775,13 +776,6 @@ def calc_psf_weights_matrix(m,B,almTensorList,lMaxVec,lMax=None,damp=0.01,
     if lMax is None:
         # If no lmax is given then calculate from the almTensor list.
         lMax = lMaxVec.max()
-    else:
-        if lMax > lMaxVec.max():
-            warningMsg = f"lmax {lMax} > {np.max(lMaxVec)}, must be strictly smaller"+\
-                  f" or equal. Setting lmax to {np.max(lMaxVec)}"
-            warn(warningMsg)
-            lMax = lMaxVec.max()
-
 
     NbaseSum = 0
     Bm = B[:,m:]
@@ -823,7 +817,7 @@ def calc_psf_weights_matrix(m,B,almTensorList,lMaxVec,lMax=None,damp=0.01,
     return Wm
 
 
-def calc_psf_weights_tensor(almTensorList,damp,weights=None,lMax=None,
+def calc_psf_weights_tensor(almTensorList,damp=0.01,weights=None,lMax=None,
                             lMaxVec=None):
     """
     Calculates the psf weights for each m-mode given by equation:
@@ -863,6 +857,16 @@ def calc_psf_weights_tensor(almTensorList,damp,weights=None,lMax=None,
     else:
         lMaxVec = np.array([int(almTensor.shape[-1])-1 \
                             for almTensor in almTensorList])
+    
+    if lMax is None:
+        # If no lmax is given then calculate from the almTensor list.
+        lMax = lMaxVec.max()
+    else:
+        if lMax > lMaxVec.max():
+            warningMsg = f"lmax {lMax} > {np.max(lMaxVec)}, must be strictly smaller"+\
+                  f" or equal. Setting lmax to {np.max(lMaxVec)}"
+            warn(warningMsg)
+            lMax = lMaxVec.max()
 
     #
     WmTensor = np.zeros((lMax+1,lMax+1,lMax+1),dtype=np.complex64)
