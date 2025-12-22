@@ -3,4 +3,4 @@
 *.python-version
 **mmode_tools.egg-info/
 *.DS_Store
-config/default_config.toml
+**src/mmode_tools/config/default_config.toml
