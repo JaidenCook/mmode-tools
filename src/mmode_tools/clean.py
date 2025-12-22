@@ -1,14 +1,15 @@
 import numpy as np
 import tqdm
-import pyshtools
 from tqdm import tqdm
-from astropy.io import fits
 import matplotlib.pyplot as plt
 from pyshtools import SHGrid,SHCoeffs
 from mmode_tools.inversion import invert_CGLS_multi_pylops
 from mmode_tools.inversion import invert_CGLS_multi_pylops_assym
+from mmode_tools.inversion import calc_reg_matrix
 from mmode_tools.functions import Gaussian2Dxy
 from scipy.optimize import curve_fit
+from scipy.linalg import cho_factor
+
 
 def fit_restoring_beam(xdata_tuple,data,coord):
     """
@@ -733,3 +734,151 @@ def make_restored_map(residDirtyMap,modelMap,paramsArr,xygrid,
         return restoredMap,modelConvMap
     else:
         return restoredMap
+
+def calc_psf_weights_matrix(m,B,almTensorList,lMaxVec,lMax=None,damp=0.01,
+                            weights=None):
+    """
+    Calculates the psf weights given by equation:
+    
+    W_m,psf = (B_m^* @ B_m + Q_m^* @ Q_m)^-1 B_m^* @ B_m
+
+    which is used to calculate the psf coefficients from point source 
+    coefficients by the equation:
+
+    a_m,psf = W_m,psf @ a_mps
+
+    This function calculates this for a single m-mode. 
+
+    Parameters:
+    ----------
+    m : int
+        m-mode to calculate the weight matrix.
+    B : np.complex64, np.ndarray
+        Array to assign the beam fringe values.
+    almTensorList : list
+        List of beam fringe coefficients, each item is for a different 
+        instrument.
+    damp : float, or np.ndarray, default=0.01
+        The damping coefficient or regularisation parameters used in the image
+        inversion.
+    weights : float, np.ndarray, default=None
+        If given these are assumed to be the noise weights for the inversion.
+
+    Returns:
+    ----------
+    Wm : np.complex64, np.ndarray
+        Output weights matrix that converts the point source coefficients to the
+        psf coefficients.
+
+    """
+    if lMax is None:
+        # If no lmax is given then calculate from the almTensor list.
+        lMax = lMaxVec.max()
+    else:
+        if lMax > lMaxVec.max():
+            warningMsg = f"lmax {lMax} > {np.max(lMaxVec)}, must be strictly smaller"+\
+                  f" or equal. Setting lmax to {np.max(lMaxVec)}"
+            warn(warningMsg)
+            lMax = lMaxVec.max()
+
+
+    NbaseSum = 0
+    Bm = B[:,m:]
+    for i,almTensor in enumerate(almTensorList):
+        Nbase = int(almTensor.shape[0])
+        # Assigning the beam fringes from each array to a total tensor.
+        if m <= lMaxVec[i]:
+            if lMaxVec[i] < lMax:
+                Bm[NbaseSum:NbaseSum+Nbase,:(lMaxVec[i]+1)-m] = \
+                    almTensor[:,m:(lMaxVec[i]+1),m]
+            else:
+                Bm[NbaseSum:NbaseSum+Nbase,:(lMaxVec[i]+1)] = \
+                    almTensor[:,m:(lMaxVec[i]+1),m]
+        # Increment the baseline number sum.
+        NbaseSum += Nbase
+
+    #
+    if np.any(weights):
+        if weights.size != Bm.shape[0]:
+            raise ValueError(f'Weights shape {weights.size} should match B' +\
+                             f' axis 0 size {Bm.shape[0]}')
+        else:
+            Bm = np.matrix(Bm*weights[:,None])
+    else:
+        Bm = np.matrix(Bm)
+
+    # Regularisation matrix.
+    R = calc_reg_matrix(damp,m,lMax)
+    Lam = Bm.H @ Bm
+    Lam_prime = Lam + R
+
+    # Decomposing the Lambda prime matrix into upper triangular matrix.
+    U,_ = cho_factor(Lam_prime,lower=False)
+    U = np.matrix(np.triu(U))
+
+    # Calculating the Weights matrix.
+    Wm =  U.I @ U.H.I @ Bm.H @ Bm
+
+    
+
+    return Wm
+
+
+from tqdm import tqdm
+
+
+def calc_psf_weights_tensor(almTensorList,damp,weights=None,lMax=None,
+                            lMaxVec=None):
+    """
+    Calculates the psf weights for each m-mode given by equation:
+    
+    W_m,psf = (B_m^* @ B_m + Q_m^* @ Q_m)^-1 B_m^* @ B_m
+
+    which is used to calculate the psf coefficients from point source 
+    coefficients by the equation:
+
+    a_m,psf = W_m,psf @ a_mps
+
+    Returns the W_m,psf tensor, where the first axix is the m-mode, and the 
+    second and third have dimension lmax + 1.
+
+
+    Parameters:
+    ----------
+    B : float, np.complex64
+        Array to assign the beam fringe values.
+    almTensorList : list
+        List of beam fringe coefficients, each item is for a different 
+        instrument.
+    damp : float, or np.ndarray, default=0.01
+        The damping coefficient or regularisation parameters used in the image
+        inversion.
+    weights : float, np.ndarray, default=None
+        If given these are assumed to be the noise weights for the inversion.
+
+    Returns:
+    ----------
+    WmTensor
+    """
+
+    if lMaxVec is not None:
+        if len(lMaxVec) != len(almTensorList):
+            raise ValueError('len(lMaxVec) != len(almTensorList)')
+    else:
+        lMaxVec = np.array([int(almTensor.shape[-1])-1 \
+                            for almTensor in almTensorList])
+
+    #
+    WmTensor = np.zeros((lMax+1,lMax+1,lMax+1),dtype=np.complex64)
+    NbaseTot = np.array([alm.shape[0] for alm in almTensorList]).sum()
+
+    #
+    B = np.zeros((NbaseTot,lMax+1),dtype=np.complex64)
+    for mmode in tqdm(range(lMax+1)):
+        Wm=calc_psf_weights_matrix(mmode,B,almTensorList,lMaxVec,lMax=lMax,
+                                   damp=damp,weights=weights)
+        #   
+        WmTensor[mmode,mmode:,mmode:] = Wm
+
+    
+    return WmTensor
