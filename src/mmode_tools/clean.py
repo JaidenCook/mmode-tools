@@ -9,6 +9,7 @@ from mmode_tools.inversion import calc_reg_matrix
 from mmode_tools.functions import Gaussian2Dxy
 from scipy.optimize import curve_fit
 from scipy.linalg import cho_factor
+from warnings import warn
 
 
 def fit_restoring_beam(xdata_tuple,data,coord):
@@ -819,12 +820,7 @@ def calc_psf_weights_matrix(m,B,almTensorList,lMaxVec,lMax=None,damp=0.01,
     # Calculating the Weights matrix.
     Wm =  U.I @ U.H.I @ Bm.H @ Bm
 
-    
-
     return Wm
-
-
-from tqdm import tqdm
 
 
 def calc_psf_weights_tensor(almTensorList,damp,weights=None,lMax=None,
