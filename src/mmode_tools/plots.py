@@ -136,18 +136,30 @@ def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
     else:
         extend=None
 
+    if coeffs.ndim == 2:
+        print('Only positive coeffs, only plotting half the SH coeffs space.')
+        fullPlot = False
+    elif coeffs.ndim !=3 and coeffs.ndim !=2:
+        raise ValueError("Coefficient array must be 2D or 3D.")
+
     # Combining the negative and positive mmodes together.
     if np.any(lmax):
         if fullPlot:
             coeff_Arr = np.hstack((coeffs[0,:lmax+1,:lmax+1][:,::-1],
                                 coeffs[1,:lmax+1,1:lmax+1]))
         else:
-            coeff_Arr = coeffs[0,:lmax+1,:lmax+1]
+            if coeffs.ndim ==3:
+                coeff_Arr = coeffs[0,:lmax+1,:lmax+1]
+            elif coeffs.ndim ==2:
+                coeff_Arr = coeffs[:lmax+1,:lmax+1]
     else:
         if fullPlot:
             coeff_Arr = np.hstack((coeffs[0,:,:][:,::-1],coeffs[1,:,1:]))
         else:
-            coeff_Arr = coeffs[0,:,:]
+            if coeffs.ndim ==3:
+                coeff_Arr = coeffs[0,:,:]
+            elif coeffs.ndim ==2:
+                coeff_Arr = coeffs
         lmax = coeff_Arr.shape[0]-1
 
     if fullPlot:
