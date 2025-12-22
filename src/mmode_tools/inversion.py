@@ -609,3 +609,116 @@ def filter_coefficients(coeffs,lmax=200,lcut=130,lwin=None,
     coeffs[...] = coeffs*filterVec[None,:,None]
 
     return None
+
+
+def calc_fisher_coeffs(almTensorList,noiseVec,lMax=None,
+                       smoothCond=False,lMaxVec=None,
+                       window=None,relOffset=1):
+    """
+    This function calculates the Fisher information for a given set of beam
+    fringe coefficients for N instruments, and for a set of associated 
+    noise values for each baseline. Here we assume that the noise is white 
+    Gaussian noise for each baseline.
+
+    Parameters
+    ----------
+    almTensorList : list
+        List of the beam fringe coefficients for each instrument. Can have
+        length one.
+    noiseVec : np.float, np.ndarray
+        Noise vector, expected noise amplitude for each baseline.
+    lMax : int, default=None
+        The maximum l-degree of the data. If not given determined from the 
+        beam fringe coefficients.
+    smoothCond=False
+
+    window : int, default=None,
+        Size of the smoothing window.
+    relOffset : float, list, default=1e-3
+
+    Returns
+    -------
+    FIcoeffsSum : np.float, np.ndarray
+        Array of FI coefficients with shape (2,lMax+1,lMax+1).
+    """
+    #
+    NbaseVec = np.array([alm.shape[0] for alm in almTensorList])
+
+    if lMaxVec is not None:
+        if len(lMaxVec) != len(almTensorList):
+            raise ValueError('len(lMaxVec) != len(almTensorList)')
+    else:
+        lMaxVec = np.array([int(almTensor.shape[-1])-1 \
+                            for almTensor in almTensorList])
+    
+    if lMax is None:
+        # If no lmax is given then calculate from the almTensor list.
+        lMax = lMaxVec.max()
+    else:
+        if lMax > lMaxVec.max():
+            warningMsg = f"lmax {lMax} > {np.max(lMaxVec)}, must be strictly smaller"+\
+                  f" or equal. Setting lmax to {np.max(lMaxVec)}"
+            warn(warningMsg)
+            lMax = lMaxVec.max()
+
+    #
+    FIcoeffs = np.zeros((NbaseVec.size,2,lMax+1,lMax+1))
+    NbSum = 0
+    for i,almTemp in enumerate(almTensorList):
+        #
+        sigVec = noiseVec[NbSum:NbSum+NbaseVec[i]]
+        # Filtering all the zero valued noise estimates.
+        sigBoolVec = sigVec > 0 
+        sigVec = sigVec[sigBoolVec]
+        
+        if lMax is not None:
+            lMax = lMaxVec[i]
+        else:
+            lMax = almTemp.shape[-1]
+        
+        # Looping through all the FI coeffs. TODO parallelise. 
+        for l in range(lMax+1):
+            for m in range(l+1):
+                bVec = almTemp[:,l,m][sigBoolVec]
+                FIcoeffs[i,0,l,m] += np.nansum(bVec.conj()*bVec/sigVec**2).real
+                FIcoeffs[i,1,l,m] += np.nansum(bVec.conj()*bVec/sigVec**2).real
+        
+        # Applying a mask for the zero value FI coeffs.
+        FImask = FIcoeffs[i,:,:,:]>0
+
+        if isinstance(relOffset,float):
+            scale = relOffset
+        elif isinstance(relOffset,list) or isinstance(relOffset,np.ndarray):
+            if len(relOffset) != NbaseVec.size:
+                raise ValueError(f"relOffset should have size {NbaseVec.size}" \
+                                 " not size {len(relOffset)}.")
+            else:
+                # If the relative offset is a list or vector index for the 
+                # appropriate value.
+                scale = relOffset[i]
+
+        eps = scale*np.nanmedian(FIcoeffs[i,:,:,:][FIcoeffs[i,:,:,:]>0])
+        # setting zero value FI coefficients to the median. Zeros cause issues
+        # in the inversion process.
+        FIcoeffs[i,FImask] += eps
+        # Incrementing the baseline sum.
+        NbSum += NbaseVec[i]
+    
+    # Summing the Fisher coefficients from all the instruments. 
+    FIcoeffsSum = np.nansum(FIcoeffs,axis=0)
+    
+    # Smoothing the FI coeffs if required.
+    if smoothCond:
+        from scipy.ndimage import gaussian_filter
+        filter = gaussian_filter
+        # If True apply a Gaussian smoothing function.
+        msize = FIcoeffs.shape[-1]
+        if window is None:
+            window = int(msize/100)
+
+        FIcoeffsSum[0,:,:] = filter(FIcoeffsSum[0,:,:],window)
+        FIcoeffsSum[1,:,:] = filter(FIcoeffsSum[1,:,:],window)
+        FImask = FIcoeffsSum > 0
+        FIcoeffsSum[FImask == False] = 0
+
+    return FIcoeffsSum
