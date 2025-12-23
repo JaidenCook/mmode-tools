@@ -1008,7 +1008,7 @@ def map2fits(skyMap,freq,outFilePath,skyCoeffs=None,damp=None,verbose=False):
     # Write to FITS file
     hdul.writeto(outFilePath,overwrite=True)
 
-def read_fits_map_sky_Coeffs(filePath,readRegParams=False):
+def fits2skyCoeffs(filePath,readRegParams=False):
     """
     Reads the sky-coefficients and the regualrisation parameters from the 
     output dirty fits map.
