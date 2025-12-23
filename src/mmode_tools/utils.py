@@ -197,16 +197,6 @@ def load_calc_mmode_tensor(arrFilePaths,Arrays,telescopes,stokesList,
                                  f"\n{tempMmodeTensor.shape}"+\
                                  f"\n{mmodeTensor[blineInd,:,:].shape}")
             blineInd += 1
-    
-    if verbose and diffVis:
-        print("-------------------------------------")
-        print(f'Diff Viss = {diffVis}')
-        print(np.mean(mmodeTensor))
-        print(np.nanmean(covTensorList[0]))
-        print(covTensorList[0].shape)
-        print(mmodeTensor.shape)
-        print("-------------------------------------")
-
 
     if returnAntPairs:
         return mmodeTensor,antPairsList
@@ -232,8 +222,7 @@ def calc_noise_weights(arrFilePaths,Arrays,telescopes,stokesList,
     Returns
     -------
     """
-    from scipy.stats import iqr
-    print("Calculating the noise weights.")
+    print("Calculating the noise weights...")
     lam = c/(freq*1e6)
     # Diff mmode tensor, required for calculating the noise weights.
     diffMmodeTensor,antPairsList= load_calc_mmode_tensor(arrFilePaths,Arrays,
@@ -243,11 +232,10 @@ def calc_noise_weights(arrFilePaths,Arrays,telescopes,stokesList,
                                                          verbose=verbose,
                                                          diffVis=True,
                                                          returnAntPairs=True)
-
+    
     NblineTot = diffMmodeTensor.shape[0]
     blineInd = 0
     noiseWeights = np.zeros(NblineTot)
-    testVec = np.zeros(NblineTot)
     for i,telescope in enumerate(telescopes):
         antPairs = antPairsList[i]
         Array = Arrays[telescope]
@@ -256,19 +244,13 @@ def calc_noise_weights(arrFilePaths,Arrays,telescopes,stokesList,
             # Calculating the maximum m-mode index for each baseline.
             # This is the maximum m-mode index that can be calculated for the
             # given baseline.
-            mmax = np.ceil(2*np.pi*np.sqrt(Array.uu_m[ant1,ant2]**2 + \
-                    Array.vv_m[ant1,ant2]**2)/lam).astype(int)
+            rm = np.sqrt(Array.uu_m[ant1,ant2]**2 + Array.vv_m[ant1,ant2]**2)
+            mmax = np.ceil(2*np.pi*rm/lam).astype(int)
             noiseWeights[blineInd] = \
                 np.nanmedian(np.abs(diffMmodeTensor[blineInd,0,mmax:]))/np.sqrt(2)
 
-            if telescope == 'MWA':
-                testVec[blineInd] = 1
-            elif telescope == 'EDA2':
-                testVec[blineInd] = 2
-            
             blineInd += 1
-            
-
+                
     weights = 1/noiseWeights
     # Depening on the lMax some m-modes might be zero.
     weights[np.isnan(weights)] = 0
@@ -388,9 +370,9 @@ def load_data(configFilePath,lMax=160,freq=160,calcWeights=False,
                                         filterParams=filterParams)
     # Calculating the noise weights.
     if calcWeights:
-        noiseWeights = calc_noise_weights(arrFilePaths,Arrays,telescopes,stokesList,
-                                     flagMatrixDict,lMax=lMax,freq=freq,
-                                     verbose=verbose)
+        noiseWeights = calc_noise_weights(arrFilePaths,Arrays,telescopes,
+                                          stokesList,flagMatrixDict,lMax=lMax,
+                                          freq=freq,verbose=verbose)
         if uniform:
             # If True calculate the uniform weights for the arrays, and combine
             # with the noise weights.
