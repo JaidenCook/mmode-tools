@@ -788,6 +788,8 @@ def write_data_config(outFilePath,dataFilePaths,interferometers,telescopes,
         List of instrumental stokes parameters for each obs.
     beamFringeFilePaths : list
         List of file locations for the beam fringe paths.
+    freq : float, default=160e6
+        Frequency in Hz.
     dates : list, default=None
         List of dates for the observations.
     lMaxList : list, default=None
@@ -799,11 +801,13 @@ def write_data_config(outFilePath,dataFilePaths,interferometers,telescopes,
     """
     interferometerFilePaths = []
     latList = []
+    lonList = []
     try:
         for telescope in telescopes:
             interferometer = interferometers[telescope]
             interferometerFilePaths.append(interferometer.filepath)
             latList.append(float(interferometer.lat))
+            lonList.append(float(interferometer.lon))
     except KeyError:
         errMsg = f"{telescope} is not a key in the Array dict."
         raise KeyError(errMsg)
@@ -827,7 +831,9 @@ def write_data_config(outFilePath,dataFilePaths,interferometers,telescopes,
             "telescopes" : telescopes, # The telescope for each obs.
             "telescope_config_files" : interferometerFilePaths, # Optional location for telescope config files.
             "freq" : freq, # Observation frequency.
+            "freq_unit" : "Hz",
             "latitudes" : latList,
+            "longitudes" : lonList,
             "lMaxList" : lMaxList
         },
         "data" : {
@@ -972,6 +978,7 @@ def map2fits(skyMap,freq,outFilePath,skyCoeffs=None,damp=None,verbose=False):
     if damp is not None:
         if isinstance(damp,float):
             header['DAMP'] = damp, "Regularisation parameter for inversion."
+            skyRegCoHDU = None
         elif isinstance(damp,np.ndarray):
             if damp.ndim > 1:
                 if damp.ndim == 3:
