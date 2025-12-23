@@ -907,7 +907,7 @@ def read_data_config(configPath,returnDates=False):
         return arrFilePaths,Arrays,telescopes,stokesList,beamFringeFilePaths
 
 
-def map2fits(skyMap,freq,outFilePath,skyCoeffs=None,verbose=False):
+def map2fits(skyMap,freq,outFilePath,skyCoeffs=None,damp=None,verbose=False):
     """
     Assumes that the projection is CAR. Should also include sky coefficients,
     for now this is added as an optional keyword argument.
@@ -922,6 +922,10 @@ def map2fits(skyMap,freq,outFilePath,skyCoeffs=None,verbose=False):
         Location path and filename for the output fits file.
     skyCoeffs : np.ndarray np.complex64, default=None
         Sky coefficients.
+    damp : np.ndarray np.float64, default = None
+        Float or array of damping/regularisation coefficients.
+    verbose : bool, default=False
+        If True print the header, and output file location information.
         
     Returns
     -------
@@ -945,32 +949,55 @@ def map2fits(skyMap,freq,outFilePath,skyCoeffs=None,verbose=False):
     w.wcs.ctype = ["RA---CAR","DEC--CAR"]
     #w.wcs.set_pv([(2, 1, 45.0)])
 
+    lMax = skyMap.shape[0]//2 - 1
+
     # Generating the header.
     header = w.to_header()
-    header['FREQ'] = freq
+    header['FREQ'] = freq, "Observing Frequency in MHz."
+    header['LMAX'] = int(lMax),"Maximum l-degree of the image."
 
     # Create sample table data
     if skyCoeffs is not None:
-        if len(skyCoeffs.shape) == 3:
+        if skyCoeffs.ndim == 3:
             # Since the sky is real valued we only need the positive coefficients.
             # We can restore these later.
             skyCoeffs = skyCoeffs[0,:,:]
         skyCoeffsTable = Table({'flat_positive_coeffs_real': skyCoeffs.flatten().real,
                                 'flat_positive_coeffs_imag': skyCoeffs.flatten().imag})
         # Create HDUs
-        # Sky map has to be flipped about the y axis. 
-        skyMapHDU = fits.PrimaryHDU(data=skyMap[::,::-1],header=header)
         skyCoeffsHDU = fits.BinTableHDU(skyCoeffsTable,name='SKY_COEFFS')
-
-        # Create HDUList
-        hdul = fits.HDUList([skyMapHDU,skyCoeffsHDU])
     else:
-        # Create HDUs
-        # Sky map has to be flipped about the y axis. 
-        skyMapHDU = fits.PrimaryHDU(data=skyMap[::,::-1],header=header)
+        skyCoeffsHDU = None
 
-        # Create HDUList
-        hdul = fits.HDUList([skyMapHDU])
+    if damp is not None:
+        if isinstance(damp,float):
+            header['DAMP'] = damp, "Regularisation parameter for inversion."
+        elif isinstance(damp,np.ndarray):
+            if damp.ndim > 1:
+                if damp.ndim == 3:
+                    # Since the sky is real valued we only need the positive coefficients.
+                    # We can restore these later.
+                    damp = damp[0,:,:]
+                damp = damp.flatten()
+            skyDampCoTable = Table({'regularisation_coefficients': damp})
+            # Create HDUs
+            skyRegCoHDU = fits.BinTableHDU(skyDampCoTable,name='REG_COEFFS')
+    else:
+        skyRegCoHDU = None
+
+    hduList = []
+    # Create HDUs
+    # Sky map has to be flipped about the y axis. 
+    skyMapHDU = fits.PrimaryHDU(data=skyMap[::,::-1],header=header)
+    hduList.append(skyMapHDU)
+
+    if skyCoeffsHDU is not None:
+        hduList.append(skyCoeffsHDU)
+    if skyRegCoHDU is not None:
+        hduList.append(skyRegCoHDU)
+
+    # Creating the hdul object that we can use to write out the fits file.
+    hdul = fits.HDUList(hduList)
 
     if verbose:
         print("Printing hdu and header information...")
@@ -980,3 +1007,57 @@ def map2fits(skyMap,freq,outFilePath,skyCoeffs=None,verbose=False):
 
     # Write to FITS file
     hdul.writeto(outFilePath,overwrite=True)
+
+def read_skyCoeffs(filePath,readRegParams=False):
+    """
+    Reads the sky-coefficients and the regualrisation parameters from the 
+    output dirty fits map.
+
+    Parameters
+    ----------
+    filePath : str
+        Fits image file path location.
+    readRegParams : bool, default=False
+        If True read the regularisation parameter. This can be an array or a
+        single float value.
+
+    Returns
+    -------
+    skyCoData : np.ndarray np.complex64
+        Sky SH coefficient array.
+    skyRegParamData : np.ndarray np.float64
+        Sky SH regularisation parameter array or single float value.
+    """
+    from mmode_tools.inversion import restore_negmodes
+    from astropy.table import Table
+
+    # Load the fits file.
+    with fits.open(filePath) as hdul:
+        header = hdul[0].header
+        lMax = header['LMAX']
+        t_skyCo = Table(hdul[1].data)
+        colnames = t_skyCo.colnames
+
+        skyCoFlat = np.array(t_skyCo[colnames[0]]) + \
+                    1j*np.array(t_skyCo[colnames[1]])
+        skyCoeffs = restore_negmodes(skyCoFlat.reshape((lMax+1,lMax+1)))
+        
+        # If True read and output the regularisation parameters.
+        if readRegParams:
+            try:
+                regParam = float(header['DAMP'])
+            except KeyError:
+                # If there is no key then check the hdul[2]. 
+                t_RegParamsCo = Table(hdul[2].data)
+                regParamsFlat = np.array(t_RegParamsCo[t_RegParamsCo.colnames[0]])
+                if regParamsFlat.size == (lMax+1)**2:
+                    # Case where the regParams are different for each (l,m)
+                    regParam = regParamsFlat.reshape((lMax+1,lMax+1))
+                    regParam = np.abs(restore_negmodes(regParam))
+                elif regParamsFlat.size == (lMax+1):
+                    # Case where the regParams are different for each m-mode.
+                    regParam = np.abs(regParam)
+
+            return skyCoeffs,regParam
+        else:
+            return skyCoeffs
