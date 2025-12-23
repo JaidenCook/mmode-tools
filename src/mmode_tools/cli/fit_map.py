@@ -11,6 +11,7 @@ coefficients.
 
 import typer
 from typing_extensions import Annotated
+from typing import List, Optional
 import toml
 import numpy as np
 import os
@@ -76,38 +77,32 @@ def print_full_line(character='-'):
 defaultInPath = get_config_directory(pathName="covTensorPath")
 defaultOutPath = get_config_directory(pathName="dirtyCoeffsPath")
 
-from typing import List, Optional
+# Putting all the help lines here to make things more concise.
+helpList = ["Data configuration file, should be .toml.",
+            "Maximum spherical harmonic degree, default = 130.",
+            "Regularisation parameter.","Location of the input directory",
+            "Location of the output directory","Output name, default is None.",
+            "Plot the primay beam map in RA/DEC.",
+            "If True calc Fisher information, overrides damp.",
+            "If given do not filter the coefficients.",
+            "If given flag-mmodes larger than lmax.",
+            "If given Calculate the weights.","Print additional information."]
 
 def fit_map_main(
-    config_file: Annotated[str,
-                         typer.Argument(help="Data configuration file, should be .toml.")] = "",
-    lmax: Annotated[Optional[List[int]],
-                   typer.Option("--lmax","-l",
-                                help="Maximum spherical harmonic degree, default = 130.")] = [130],
-    damp: Annotated[float,
-                   typer.Option("--damp","-d",help="Regularisation parameter.")] = 0.01,
-    inpath: Annotated[str,
-                       typer.Option("--inpath","-i",help="Location of the input directory")] = defaultInPath,
-    outpath: Annotated[str,
-                       typer.Option("--outpath","-O",help="Location of the output directory")] = defaultOutPath,
-    outname: Annotated[str,
-                       typer.Option("--outname","-o",help="Output name, default is None.")] = None,
-    plot: Annotated[bool,
-                       typer.Option("--plot","-p",help="Plot the primay beam map in RA/DEC.")] = False,
-    calc_fisher: Annotated[bool,
-                       typer.Option("--calc-fisher","-F",help="If True calc Fisher information, overrides damp.")] = False,
-    filterCond: Annotated[bool,
-                         typer.Option("--filter",help="If given do not filter the coefficients.")] = False,
-    flag_mmodes: Annotated[bool,
-                         typer.Option("--flag-mmodes",help="If given flag-mmodes larger than lmax.")] = False,
-    weightsCond: Annotated[bool,
-                         typer.Option("--calc-weights",help="If given Calculate the weights.")] = False,
-    verbose: Annotated[bool,
-                       typer.Option("-v",help="Print additional information.")] = False
+    config_file: Annotated[str,typer.Argument(help=helpList[0])] = "",
+    lmax: Annotated[Optional[List[int]],typer.Option("--lmax","-l",help=helpList[1])] = [130],
+    damp: Annotated[float,typer.Option("--damp","-d",help=helpList[2])] = 0.01,
+    inpath: Annotated[str,typer.Option("--inpath","-i",help=helpList[3])] = defaultInPath,
+    outpath: Annotated[str,typer.Option("--outpath","-O",helpList[4])] = defaultOutPath,
+    outname: Annotated[str,typer.Option("--outname","-o",help=helpList[5])] = None,
+    plot: Annotated[bool,typer.Option("--plot","-p",help=helpList[6])] = False,
+    calc_fisher: Annotated[bool,typer.Option("--calc-fisher","-F",help=helpList[7])] = False,
+    filterCond: Annotated[bool,typer.Option("--filter",help=helpList[8])] = False,
+    flag_mmodes: Annotated[bool,typer.Option("--flag-mmodes",help=helpList[9])] = False,
+    weightsCond: Annotated[bool,typer.Option("--calc-weights",help=helpList[10])] = False,
+    verbose: Annotated[bool,typer.Option("-v",help=helpList[11])] = False
 ):
-    
-
-    #
+    # Loading in the some of the important meta data.
     with open(inpath+config_file,'r') as f:
         configDict = toml.load(f)
         freq = configDict['params']['freq']
@@ -124,6 +119,23 @@ def fit_map_main(
         filterParams = make_filter_params(configDict,lMax=lmax)
     else:
         filterParams = None
+
+    print("Loading the mmodeTensor, and beam fringe coefficients.")    
+    print_full_line(character='=')
+
+    # Load the data in the mmode tensor format. Additionally load the weights
+    # and the beam fringe coefficients for each of the baselines.
+    # When loading the data we want a large lmax, for calculating the expected
+    # noise on the mmodes. That's because we use the noise dominated modes to 
+    # estimate the noise amplitude from the difference visibilities. If lmax
+    # is too low then longer baselines don't get accurate noise estimates.
+    mmodeTensor,almTensorList,weights = load_data(inpath+config_file,
+                                                  lMax=int(lMaxVec.max()),
+                                                  freq=freq,
+                                                  calcWeights=weightsCond,
+                                                  filterParams=filterParams,
+                                                  verbose=verbose,
+                                                  flagMmodes=flag_mmodes)
 
     if len(lmax) > 1:
         lMax = np.array(lmax).max()
@@ -163,20 +175,7 @@ def fit_map_main(
         print(f"Plot: {plot}")
         print_full_line(character='=')
 
-
-    print("Loading the mmodeTensor, and beam fringe coefficients.")    
-    print_full_line(character='=')
-
-    # Load the data in the mmode tensor format. Additionally load the weights
-    # and the beam fringe coefficients for each of the baselines
-    mmodeTensor,almTensorList,weights = load_data(inpath+config_file,
-                                                  lMax=lMax,freq=freq,
-                                                  calcWeights=weightsCond,
-                                                  filterParams=filterParams,
-                                                  verbose=verbose,
-                                                  flagMmodes=flag_mmodes)
-
-    #
+    # Check lMaxVec has the right size.
     if lMaxVec is not None:
         if lMaxVec.size != len(almTensorList):
             warn(f"Number of Lmax values {lMaxVec.size} should equal number of " +
@@ -184,7 +183,7 @@ def fit_map_main(
                 "Setting lMaxVec to None.")
             lMaxVec = None
 
-    #
+    # If True calculate the Fisher information for regularisation.
     if calc_fisher:
         print("Calculating the Fisher Information (FI) for regularisation...")
         print("Overriding damp value with FI...")
@@ -200,7 +199,8 @@ def fit_map_main(
             noiseVec[weights==0] = 0
         damp = calc_fisher_coeffs(almTensorList,noiseVec,lMax=lMax,
                                   lMaxVec=lMaxVec)
-        print(damp.shape)
+        # Only need the positive m-mode regularisation parameters.
+        damp = damp[0,:lMax+1,:lMax+1]
     #
     if verbose:
         verbosity = 10
@@ -208,14 +208,13 @@ def fit_map_main(
         print_full_line(character='=')
     else:
         verbosity = 0
-
     # Perform the inversion, return the CAR map and the coefficients.
     skyMap,skyCo = data2map(mmodeTensor,almTensorList,weights,
                             invert=invert_tikh_multi_assym,lMax=lMax,
                             lMaxVec=lMaxVec,damp=damp,verbosity=verbosity,
                             returnCoeffs=True,damp_alpha=0)
     
-    # Saving the output map.
+    # Saving the output map, sky coefficients and regularisation parameter.
     map2fits(skyMap.real,freq,outFilePath,skyCoeffs=skyCo,damp=damp)
 
     if verbose:
