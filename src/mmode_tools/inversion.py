@@ -686,9 +686,9 @@ def calc_fisher_coeffs(almTensorList,noiseVec,lMax=None,
         # Applying a mask for the zero value FI coeffs.
         FImask = FIcoeffs[i,:,:,:]>0
 
-        if isinstance(relOffset,float):
+        if isinstance(relOffset,(float,int)):
             scale = relOffset
-        elif isinstance(relOffset,list) or isinstance(relOffset,np.ndarray):
+        elif isinstance(relOffset,(list,np.ndarray)):
             if len(relOffset) != NbaseVec.size:
                 raise ValueError(f"relOffset should have size {NbaseVec.size}" \
                                  " not size {len(relOffset)}.")
