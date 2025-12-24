@@ -93,7 +93,7 @@ def fit_map_main(
     lmax: Annotated[Optional[List[int]],typer.Option("--lmax","-l",help=helpList[1])] = [130],
     damp: Annotated[float,typer.Option("--damp","-d",help=helpList[2])] = 0.01,
     inpath: Annotated[str,typer.Option("--inpath","-i",help=helpList[3])] = defaultInPath,
-    outpath: Annotated[str,typer.Option("--outpath","-O",helpList[4])] = defaultOutPath,
+    outpath: Annotated[str,typer.Option("--outpath","-O",help=helpList[4])] = defaultOutPath,
     outname: Annotated[str,typer.Option("--outname","-o",help=helpList[5])] = None,
     plot: Annotated[bool,typer.Option("--plot","-p",help=helpList[6])] = False,
     calc_fisher: Annotated[bool,typer.Option("--calc-fisher","-F",help=helpList[7])] = False,
@@ -154,9 +154,9 @@ def fit_map_main(
         # template.
         prefix = os.path.split(config_file)[1].split('.')[0]
         outName = prefix +f"_lmax{lMax}" + "_dirty-map.fits"
-        outFilePath = outpath + outName
     else:
         outName = outname
+    outFilePath = outpath + outName
 
     if verbose:
         print('Input arguments and optional arguments:')
@@ -198,7 +198,7 @@ def fit_map_main(
             noiseVec = 1/weights
             noiseVec[weights==0] = 0
         damp = calc_fisher_coeffs(almTensorList,noiseVec,lMax=lMax,
-                                  lMaxVec=lMaxVec)
+                                  lMaxVec=lMaxVec,absOffset=1e-1)
         # Only need the positive m-mode regularisation parameters.
         damp = damp[0,:lMax+1,:lMax+1]
     #
