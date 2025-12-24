@@ -3,12 +3,13 @@ import tqdm
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from pyshtools import SHGrid,SHCoeffs
-from mmode_tools.inversion import invert_CGLS_multi_pylops
+from mmode_tools.inversion import invert_tikh_multi_assym
 from mmode_tools.inversion import invert_CGLS_multi_pylops_assym
-from mmode_tools.inversion import calc_reg_matrix
+from mmode_tools.inversion import calc_reg_matrix,restore_negmodes
 from mmode_tools.functions import Gaussian2Dxy
 from scipy.optimize import curve_fit
 from scipy.linalg import cho_factor
+from scipy.ndimage import generic_filter
 from warnings import warn
 
 
@@ -57,6 +58,65 @@ def fit_restoring_beam(xdata_tuple,data,coord):
 
     return amp,sigx,sigy
 
+def calc_psf_map(pointCoord,weightsTensor,dirtyMapShape,returnCoeffs=False):
+    """
+    Function calculates the psf map for a given x and y pixel coordinate.
+
+    Parameters:
+    ----------
+    pointCoord : tuple
+        Tuple containing the x and y coordinates as array indices for the point
+        source position.
+    weightsTensor : np.ndarray, np.complex64
+        This is the weights tensor that converts the PS to PSF coefficients.
+    dirtyMapShape : tuple
+        This is the x and y axis shape for the input dirty map.
+    returnCoeffs : bool, default=False
+        If True return the PS and PSF coefficients.
+
+    Returns:
+    ----------
+    mapPSF : np.ndarray, np.float64
+        PSF map
+    apsf : np.ndarray, np.complex64
+        PSF SH coefficients.
+    aps : np.ndarray, np.complex64
+        Point source SH coefficients.
+    """
+    from mmode_tools.inversion import restore_negmodes
+    
+    # Creating the point source map. We can also calculate this analytically 
+    # as well using the RA and DEC position. We leave this as a TODO for next
+    # time.
+    xcoord,ycoord = pointCoord
+    pointMap = np.zeros(dirtyMapShape)
+    pointMap[int(ycoord),int(xcoord)] = 1
+
+    mapPrep = SHGrid.from_array(np.array(pointMap,dtype=np.complex64))
+    # Set to zero for the next iteration.
+    aps = mapPrep.expand(normalization='ortho',csphase=-1).coeffs
+    # Get the coefficients.
+    aps = aps[0,:,:]
+
+    # Using a for-loop:
+    apsf = np.zeros_like(aps)
+    for m, rhsMatrix in enumerate(weightsTensor):
+        apsf[:,m] = rhsMatrix @ aps[:,m]  # almMatrix[:, i] has shape (N,)
+
+    apsf = restore_negmodes(apsf)
+
+    # Expanding the map.
+    psfCoeffs = SHCoeffs.from_array(apsf,normalization='ortho',csphase=-1)
+    mapPSF = psfCoeffs.expand(grid='DH2',backend='ducc').data.real
+
+    if returnCoeffs:
+        aps = restore_negmodes(aps)
+
+        return mapPSF,apsf,aps
+    else:
+        return mapPSF
+    
+
 def forward_model_psf(pointMap,almTensor,lMax=129,rtol=1e-16,verbosity=10,
                       damp=0.5,returnCoeffs=False):
     """
@@ -96,7 +156,7 @@ def forward_model_psf(pointMap,almTensor,lMax=129,rtol=1e-16,verbosity=10,
 
     if isinstance(almTensor,list):
         # For multi-system CLEAN with different lmax values.
-        invert = invert_CGLS_multi_pylops_assym
+        invert = invert_tikh_multi_assym
 
         NbVec = np.array([alm.shape[0] for alm in almTensor]) # Nbaseline vector
         lVec = np.array([alm.shape[-1] for alm in almTensor]) # lMax vector
@@ -115,7 +175,7 @@ def forward_model_psf(pointMap,almTensor,lMax=129,rtol=1e-16,verbosity=10,
             NbSum += NbVec[i]
     elif isinstance(almTensor,np.ndarray):
         # For single system.
-        invert = invert_CGLS_multi_pylops
+        invert = invert_tikh_multi_assym
 
         # Forward modelling the mmode tensor.
         mmodeTensor  = np.conj(np.einsum("blm,lm->bm",almTensor,
@@ -136,7 +196,7 @@ def forward_model_psf(pointMap,almTensor,lMax=129,rtol=1e-16,verbosity=10,
     else:
         return mapPSF
 
-def make_thresh_maps(dirtyMap,relWindowSize=0.04):
+def make_thresh_maps(dirtyMap,skyCo,windowSizeDeg=6):
     """
     Makes the threshold map. Smooths the dirty image, subtracts the smoothed 
     image from the original dirty image to remove background estimate. 
@@ -161,27 +221,34 @@ def make_thresh_maps(dirtyMap,relWindowSize=0.04):
     threshMap : np.float64, np.ndarray
         Threshold map in units of sigma, used for peak detection.
     """
-    from skimage.filters import threshold_local
-    from scipy.stats import iqr
+    Ncells = dirtyMap.shape[1]
+    windowSizePix = int(windowSizeDeg/(360/Ncells)) + 1
 
-    # Scale invariant window size.
-    windowSize = int(relWindowSize*dirtyMap.shape[1])
-    if windowSize % 2 == 0:
-        windowSize += 1
+    if windowSizePix % 2 == 0:
+        windowSizePix += 1
     
-    print(f"Window size = {windowSize}")
+    # Calculating the background estimate. Using a Gaussian to low pass filter
+    # the coefficients. In future can use a different filter.
+    lsig = 2*np.pi*(1/(np.radians(360/Ncells)*windowSizePix))
+    lMax = skyCo.shape[-1] - 1
+    lVec = np.arange(lMax+1)
+    skyCoLPF = np.copy(skyCo)
+    skyCoLPF[:,:lMax+1,:lMax+1] *= np.exp(-0.5*(lVec/lsig)**2)[None,:,None]
+    skyCoeffsLPF = SHCoeffs.from_array(skyCoLPF,normalization='ortho',csphase=-1,
+                                   lmax=lMax)
+    skyMapObjLPF = skyCoeffsLPF.expand(grid='DH2',backend='ducc',lmax=lMax)
+    bkgMap = skyMapObjLPF.data.real
+    
+    print(f"Window size = {windowSizePix}")
 
-    bkgMap = threshold_local(dirtyMap.real,windowSize,mode='wrap',
-                             method='gaussian')
-    stdMap = threshold_local(dirtyMap.real-bkgMap,windowSize,mode='wrap',
-                             method='generic',param=iqr)/1.35
-
-    threshMap = ((dirtyMap.real-bkgMap)/stdMap)
+    diffMap = (dirtyMap.real-bkgMap)
+    stdMap =  np.sqrt(generic_filter(diffMap**2,np.median,size=windowSizePix))
+    
+    threshMap = diffMap/stdMap
 
     return bkgMap,stdMap,threshMap
 
-def find_good_peaks(threshMap,DECgrid,
-                    thresh=4,DECthresh=(41,-80),maskList=None,cleanMask=None,
+def find_good_peaks(threshMap,thresh=4,cleanMask=None,
                     threshold_rel=None,threshold_abs=3):
     """
     Finds peaks for CLEAN using the threshold map.
@@ -194,11 +261,6 @@ def find_good_peaks(threshMap,DECgrid,
         2D DEC grid.
     thresh : float, default=4
         Significance threshold in sigma for peak detection.
-    DECthresh : tuple, default=(41,-80)
-        Tuple containing the DEC limits (max and min) which to not CLEAN outside.
-    maskList : list, default=None
-        List containing tuples of (x,y,window) coordinates for rectangular
-        masks.
     cleanMask : bool np.ndarray
         Boolean numpy array with the same shape as the dirty image. Used to find
         peaks within only the mask region.
@@ -215,28 +277,11 @@ def find_good_peaks(threshMap,DECgrid,
     coords : np.float64 np.ndarray
         2D numpy array containing peak xy-coordinates.
     """
+    # TODO: Refactor the masking. This can be greatly simplified.
+
     from skimage.feature import peak_local_max
-    # Remove low latitude regions, and high latitude regions where we have poor 
-    # sensitivity.
-    decMask = (DECgrid >= DECthresh[0]) | (DECgrid < DECthresh[1])
-
-    threshMap[decMask] = 0
-    # Performing the peak detection on the masked threshold map.
-    coords = peak_local_max(threshMap,threshold_rel=threshold_rel,
-                            threshold_abs=threshold_abs)
-    threshVec = threshMap[coords[:,0],coords[:,1]]
-    coords = coords[threshVec>=thresh,:]
-
-    # Finding sources which are in the Sun and Cygnus A sidelobe regions. 
-    # Sources in these locations are potentially spurious artefacts.
-    if np.any(maskList):
-        for i,mask in enumerate(maskList):
-            boolInds = ((coords[:,1]>mask[1])&(coords[:,1]<=mask[1]+mask[2]))*\
-            ((coords[:,0]>mask[0])&(coords[:,0]<=mask[0]+mask[2]))
-            # Subset coords for all sources not in the masked region.
-            coords = coords[boolInds==False,:]
-    
-    if np.any(cleanMask):
+    # If not None apply a CLEAN mask, only find point within the masked region.
+    if cleanMask is not None:
         # Check the shapes are the same, required to filter coords outside the 
         # clean mask.
         if cleanMask.shape != threshMap.shape:
@@ -244,21 +289,14 @@ def find_good_peaks(threshMap,DECgrid,
                      f"to map shape {threshMap.shape}"
             raise ValueError(errMsg)
         
-        print('Appling a CLEAN mask.')
-        # Calculate the 1D index values of the coordinates.
-        ravelCoords = np.ravel_multi_index((coords[:,0],coords[:,1]),
-                                           cleanMask.shape)
+        threshMap[cleanMask==False] = 0
 
-        # Create a flat index vector and apply the clean mask to get the mask 
-        # index vector.
-        indVec = np.arange(cleanMask.size)
-        maskInds = indVec[cleanMask.flatten()]
+    # Performing the peak detection on the masked threshold map.
+    coords = peak_local_max(threshMap,threshold_rel=threshold_rel,
+                            threshold_abs=threshold_abs)
+    threshVec = threshMap[coords[:,0],coords[:,1]]
+    coords = coords[threshVec>=thresh,:]
 
-        # Find all the mask indices that are the ravelCoords vector.
-        coordMask = np.isin(ravelCoords,maskInds)
-
-        # Apply the mask to coords.
-        coords = coords[coordMask,:]
 
     return coords
 
@@ -342,8 +380,8 @@ def plot_dirty_image(dirtyMap,coords=None,figaxs=None,cmap='twilight_shifted',
                                        winx,winy,edgecolor='k',facecolor='none')
             axs.add_patch(square)
 
-def make_resid_map(modelMap,almTensor,mmodeTensor,lMax=130,verbosity=1,damp=0.5,
-                   plotCond=False,rtol=1e-4,vmin=-1e6,vmax=1e6,
+def make_resid_map(modelMap,almTensor,mmodeTensor,lMax=130,lMaxVec=None,
+                   verbosity=1,damp=0.5,plotCond=False,vmin=-1e6,vmax=1e6,
                    linear_width=1e5):
     """
     Takes input model image, beam fringe coefficients, and mmode visibility data
@@ -382,7 +420,8 @@ def make_resid_map(modelMap,almTensor,mmodeTensor,lMax=130,verbosity=1,damp=0.5,
 
     if isinstance(almTensor,list):
         # For multi-system CLEAN with different lmax values.
-        invert = invert_CGLS_multi_pylops_assym
+        #invert = invert_CGLS_multi_pylops_assym
+        invert = invert_tikh_multi_assym
 
         NbVec = np.array([alm.shape[0] for alm in almTensor]) # Nbaseline vector
         lVec = np.array([alm.shape[-1] for alm in almTensor]) # lMax vector
@@ -403,7 +442,7 @@ def make_resid_map(modelMap,almTensor,mmodeTensor,lMax=130,verbosity=1,damp=0.5,
 
     elif isinstance(almTensor,np.ndarray):
         # For single system.
-        invert = invert_CGLS_multi_pylops
+        invert = invert_tikh_multi_assym
 
         # Forward modelling the mmode tensor.
         modelMmodeTensor  = np.conj(np.einsum("blm,lm->bm",almTensor,modelCoeff,
@@ -418,14 +457,14 @@ def make_resid_map(modelMap,almTensor,mmodeTensor,lMax=130,verbosity=1,damp=0.5,
         residMmodeTensor = mmodeTensor - modelMmodeTensor
 
     # Solving for the sky modes.
-    skyModes = invert(almTensor,np.conj(residMmodeTensor),lmax=lMax,rtol=rtol,
-                      verbosity=verbosity,damp=damp)
+    skyModes = invert(almTensor,np.conj(residMmodeTensor),lmax=lMax,
+                      lMaxVec=lMaxVec,verbosity=verbosity,damp=damp)
 
     sphericalCoeffs = SHCoeffs.from_array(skyModes,normalization='ortho',
                                           csphase=-1)
     griddedCoeffs = sphericalCoeffs.expand(grid='DH2',
                                            backend='ducc',lmax_calc=lMax)
-    residDirtyMap = griddedCoeffs.data
+    residDirtyMap = griddedCoeffs.data.real
 
     if plotCond:
         plot_dirty_image(modelMap,linear_width=linear_width,
@@ -435,9 +474,9 @@ def make_resid_map(modelMap,almTensor,mmodeTensor,lMax=130,verbosity=1,damp=0.5,
 
     return residDirtyMap
 
-def minor_iteration(dirtyMap,dirtyPeakMap,modelMap,coords,psfCube,stdMap,
-                    poptArr,bkgMap,xygrid,almTensor,loopGain=0.1,lMax=130,
-                    sigThresh=2,verbosity=1,damp=0.5,plotCond=False):
+def minor_iteration(dirtyMap,dirtyPeakMap,modelMap,psfWeightsTensor,coords,
+                    psfCoeffCube,stdMap,bkgMap,loopGain=0.1,sigThresh=2,
+                    verbosity=1,plotCond=False):
     """
     Performs the minor iteration.
 
@@ -486,33 +525,25 @@ def minor_iteration(dirtyMap,dirtyPeakMap,modelMap,coords,psfCube,stdMap,
     xcent = int(dirtyMap.shape[1]/2)
 
     # Making the PSF.
-    if np.sum(psfCube[ycoord,:,:]) == 0:
+    if np.sum(psfCoeffCube[ycoord,:,:]) == 0:
         # Used to model the psf:
         pointMap = np.zeros(dirtyMap.shape)
         pointMap[int(ycoord),xcent] = 1
-        psfMap = forward_model_psf(pointMap,almTensor,lMax=lMax,
-                                   verbosity=verbosity,damp=damp).real
+        psfMap,apsf,_ = calc_psf_map((xcent,ycoord),psfWeightsTensor,
+                                     dirtyMap.shape,returnCoeffs=True)
 
-        # Assign to PSF cube:
-        psfCube[ycoord,:,:] = psfMap
-
-        # Getting the fit PSF params.
-        _,sigx,sigy = fit_restoring_beam(xygrid,psfMap,np.array([ycoord,xcent]))
-        
-        # Assigning the fit PSF params.
-        poptArr[ycoord,:] = np.array([1/(2*np.pi*sigx*sigy),xcoord,ycoord,
-                                    sigx,sigy])
+        # Assign to PSF coefficient cube for later use.
+        psfCoeffCube[ycoord,:,:] = apsf[0,:,:] # Only need the positive m-modes.
     else:
-        if dirtyMap.shape[1] > psfCube[ycoord,:,:].shape[1]:
-            # For larger maps, we only stor the 5 sigma around the PSF.
-            psfMap = np.zeros(dirtyMap.shape,dtype=np.float64)
-            dN = int((psfMap.shape[1] - psfCube[ycoord,:,:].shape[1])/2)
-            psfMap[:,dN:-dN-1] = psfCube[ycoord,:,:]
-        else:
-            psfMap = psfCube[ycoord,:,:]
+        # If the coefficients already exist then we can expand the map.
+        apsf = psfCoeffCube[ycoord,:,:] # psf coefficients.
+        apsf = restore_negmodes(apsf) # Restoring negative modes.
+        psfCoeffs = SHCoeffs.from_array(apsf,normalization='ortho',csphase=-1)
+        psfMap = psfCoeffs.expand(grid='DH2',backend='ducc').data.real # psf map.
 
+    #
     if plotCond:
-        plot_dirty_image(psfMap.real,norm='linear',title='PSF')
+        plot_dirty_image(psfMap,norm='linear',title='PSF')
 
     bkg = bkgMap[ycoord,xcoord]
     std = stdMap[ycoord,xcoord]
@@ -541,11 +572,11 @@ def minor_iteration(dirtyMap,dirtyPeakMap,modelMap,coords,psfCube,stdMap,
 
     return coords
 
-def major_iteration(mmodeTensor,almTensor,residDirtyMap,modelMap,paramsArr,
-                    psfCube,DECgrid,xygrid,coords=None,Nminor=20000,
-                    plotCond=False,thresh=4,lMax=130,loopGain=0.1,sigThresh=2,
-                    verbosity=1,damp=0.5,DECthresh=(41,-80),maskList=None,
-                    cleanMask=None,relWindowSize=0.04,vmin=-1e6,vmax=1e6,
+def major_iteration(mmodeTensor,almTensor,residDirtyMap,modelMap,
+                    psfCoeffCube,psfWeightsTensor,skyCoeffs,coords=None,
+                    Nminor=20000,plotCond=False,thresh=4,lMax=130,lMaxVec=None,
+                    loopGain=0.1,sigThresh=2,verbosity=1,damp=0.5,
+                    cleanMask=None,windowSizeDeg=7,vmin=-1e6,vmax=1e6,
                     linear_width=1e5):
     """
     Performs the major iteration. Finds CLEAN components with minor loops, and
@@ -598,30 +629,27 @@ def major_iteration(mmodeTensor,almTensor,residDirtyMap,modelMap,paramsArr,
     cleanMask : bool np.ndarray, default=None
         Boolean numpy array with the same shape as the dirty image. Used to find
         peaks within only the mask region.
-    relWindowSize : float, default=0.04
-        Relative window size for determining the threshold window. This is a 
-        scale invariant method. This is multiplied by the Naxis1 of the dirty
-        image. 
+    windowSizeDeg : float, default=7
+        Window size in degrees for calculating the background.
     
 
     Returns:
     ----------
     """
     # Get the background, standard deviation and threshold maps.
-    bkgMap,stdMap,threshMap = make_thresh_maps(residDirtyMap,
-                                               relWindowSize=relWindowSize)
+    bkgMap,stdMap,threshMap = make_thresh_maps(residDirtyMap,skyCoeffs,
+                                               windowSizeDeg=windowSizeDeg)
     if verbosity > 0:
         print('Background, standard deviation, and threshold maps created...')
     # Subtract the background from the residual image.
     dirtyPeakMap = residDirtyMap.real-bkgMap
     
-    if np.any(coords) == None:
+    if coords is None:
         if verbosity > 0:
             print('Performing peak detection...')
         # Perform peak detection on the threshold map, apply masks if available.
-        coords = find_good_peaks(threshMap,DECgrid,thresh=thresh,
-                                 DECthresh=DECthresh,maskList=maskList,
-                                 cleanMask=cleanMask,threshold_abs=thresh)
+        coords = find_good_peaks(threshMap,thresh=thresh,cleanMask=cleanMask,
+                                 threshold_abs=thresh)
     # If no sources found then exit.
     if coords.size == 0:
         print('No sources found.')
@@ -634,7 +662,7 @@ def major_iteration(mmodeTensor,almTensor,residDirtyMap,modelMap,paramsArr,
         # Plot the bkg, dirty map, and threshold map with coords overlaid.
         plot_dirty_image(residDirtyMap.real,coords=coords,
                          linear_width=linear_width,
-                         norm='asinh',title='Dirty Image',patchList=maskList,
+                         norm='asinh',title='Dirty Image',
                          vmax=vmax,vmin=vmin)
         if verbosity > 0:
             # If verbosity is greater than zero and plot cond is true, plot
@@ -659,14 +687,15 @@ def major_iteration(mmodeTensor,almTensor,residDirtyMap,modelMap,paramsArr,
         else:
             plotCondMinor = False
 
-        coords = minor_iteration(residDirtyMap,dirtyPeakMap,modelMap,coords,
-                                 psfCube,stdMap,paramsArr,bkgMap,xygrid,
-                                 almTensor,loopGain=loopGain,lMax=lMax,
-                                 sigThresh=sigThresh,verbosity=verbosity,
-                                 damp=damp,plotCond=plotCondMinor)
+        #
+        coords = minor_iteration(residDirtyMap,dirtyPeakMap,modelMap,
+                                 psfWeightsTensor,coords,psfCoeffCube,stdMap,
+                                 bkgMap,loopGain=loopGain,sigThresh=sigThresh,
+                                 verbosity=verbosity,plotCond=plotCondMinor)
     # Calculate the residual dirty map.
     residDirtyMap[:,:] = make_resid_map(modelMap,almTensor,mmodeTensor,
-                                        lMax=lMax,verbosity=verbosity,damp=damp,
+                                        lMax=lMax,lMaxVec=lMaxVec,
+                                        verbosity=verbosity,damp=damp,
                                         plotCond=plotCond,vmin=vmin,vmax=vmax,
                                         linear_width=linear_width)
     return True
@@ -710,13 +739,13 @@ def make_restored_map(residDirtyMap,modelMap,paramsArr,xygrid,
     # Getting the xy-grid arrays.
     xx,yy= xygrid
     # Getting the boolean mask for all model point sources.
-    modInds = modelMap > 0
+    modelInds = modelMap > 0
 
     # Determining the Gaussian restoring beam size. Should be the min fit 
     # Gaussian.
     sigMin = np.min(paramsArr[:,3:5][paramsArr[:,3:5]>=1])
-    xcoords = xx[modInds]
-    ycoords = yy[modInds]
+    xcoords = xx[modelInds]
+    ycoords = yy[modelInds]
     sigxVec = np.ones(ycoords.size)*sigMin/np.cos(np.radians(DECVec[ycoords]))
     sigyVec = np.ones(ycoords.size)*sigMin
     ampVec = modelMap[ycoords,xcoords]/(2*np.pi*sigxVec*sigyVec)
@@ -736,6 +765,159 @@ def make_restored_map(residDirtyMap,modelMap,paramsArr,xygrid,
     else:
         return restoredMap
 
+
+def make_mask_box(maskParams,RAgrid,DECgrid):
+    """
+    Function for making a masking box.
+
+    Parameters:
+    ----------
+    RA : np.ndarray
+        Vector of RA values for each of the masks.
+    DEC : np.ndarray
+        Vector of DEC values for each of the masks.
+    size : np.ndarray
+        Vector of mask sizes in degrees.
+    RAgrid : np.ndarray
+        RA grid, for determining the pixel location.
+    DECgrid : np.ndarray
+        DEC grid, for determining the pixel location.
+
+    Returns:
+    ----------
+    maskList : list
+        List of mask parameters, each entry is a tuple of size 3, with elements
+        being ycorner, xcorner indices, and the size of the square mask in pix.
+
+    """
+    _,RA,DEC,size = zip(*maskParams)
+
+    RA = np.array(RA)
+    DEC = np.array(DEC)
+    size = np.array(size)
+
+    # Expected pixel size in degrees.
+    dtheta = 360/RAgrid.shape[1]
+    # Converting angular size from degrees to pixel size.
+    sizePix = (size/dtheta).astype(int)
+
+    # Calculating the RA and DEC corner values.
+    RAcorner = RA - size/2
+    DECcorner = DEC - size/2
+
+    # Adjusting values in if any fall outside of the grid.
+    DECcorner[DECcorner < -90] = -90
+    RAcorner[RAcorner < 0] = 180 + RAcorner[RAcorner < 0] # Wraps.
+
+    # Getting the ravel indices for each of the grid points.
+    indexVec = np.zeros(RA.shape,dtype=int)
+    for ind,ra in enumerate(RAcorner):
+        dec = DECcorner[ind]
+        indexVec[ind] = np.argmin(np.sqrt((RAgrid-ra)**2 + (DECgrid-dec)**2))
+    
+    # Getting the y and x ind corner unravelled indices
+    yCorner,xCorner = np.unravel_index(indexVec,RAgrid.shape)
+
+    # Zipping the values together in a list. This list can be read by the CLEAN
+    # functions.
+    #maskList = list(zip(yCorner,xCorner,sizePix))
+    maskList = list(zip(yCorner.tolist(),xCorner.tolist(),sizePix.tolist()))
+
+    return maskList
+
+
+def calc_clean_mask(skyCo,initalMask=None,DECthresh=(41,-80),maskList=None,
+                    GPthresh=0,GPthreshFlip=False,plotCond=False):
+    """
+    Function calculates a clean mask from input threshold parameters.
+
+    Parameters:
+    ----------
+    skyCo : np.ndarray, np.complex64
+        Array of SH-coefficients for the dirty map. Used to construct the grid.
+    initalMask : np.ndarray, bool, default=None
+        Initial clean mask grid, if given this is added to the clean mask list.
+    DECthresh : tuple, default=(41,-80)
+        Tuple containing the min and maximum declinations. Values above and 
+        below are masked.
+    maskList : list, default=None
+        List of box mask regions, if not none these are calculated and added to 
+        the clean mask list.
+    GPthresh : float, default=0
+        Galactic Plane latitude threshold. If > 0 then all values below this
+        cutoff are masked. Great for masking the GP, when only wanting to CLEAN
+        extra-galactic sources.
+    plotCond : bool, default=False
+        If True plot the mask. Use this when you want to ensure that outputs 
+        makse sense.
+
+    Returns:
+    ----------
+    cleanMask : bool, np.ndarray
+        2D grid of boolean values, used to mask the dirty image when performing
+        peak detection.
+    """
+    from astropy.coordinates import SkyCoord
+    from astropy import units as u
+
+    coeffsObj = SHCoeffs.from_array(skyCo,normalization='ortho',csphase=-1)
+    coeffsObjExp = coeffsObj.expand(grid='DH2',backend='ducc')
+    RAVec = coeffsObjExp.lons()
+    DECVec = coeffsObjExp.lats()
+    RAVecNew = np.roll(np.copy(RAVec),int(RAVec.size/2))
+    RAgrid,DECgrid = np.meshgrid(RAVecNew,DECVec[::-1])
+
+    # Making the declination mask.
+    #decMask = (DECgrid >= DECthresh[0]) | (DECgrid < DECthresh[1])
+    decMask = (DECgrid >= DECthresh[0]) | (DECgrid < DECthresh[1]) == False
+    
+    # Initialising the CLEAN
+    cleanMaskList = [decMask]
+
+    # If mask list is not None then create mask grid and add to cleanmask list.
+    if maskList is not None:
+        maskGrid = np.ones_like(RAgrid)
+        for mask in maskList:
+            yInd = mask[0]
+            xInd = mask[1]
+            size = mask[2]
+            maskGrid[yInd:yInd+size,xInd:xInd+size] = 0
+        # Converting to True False map.
+        maskGrid = maskGrid.astype(bool)
+        cleanMaskList.append(maskGrid)
+
+    # Creating a mask for the coords in the GP.
+    if GPthresh > 0:
+        cArr = SkyCoord(RAgrid*u.deg,DECgrid*u.deg)
+        GPlatGrid = cArr.galactic.b.value
+        GPmask = np.abs(GPlatGrid) >= GPthresh
+        if GPthreshFlip:
+            # If True Flag all latitudes outside the GP lat cuttoff.
+            GPmask = GPmask == False
+        cleanMaskList.append(GPmask)
+
+    # If initial mask is provided we can add this to the mask list.
+    if initalMask is not None:
+        if initalMask.shape == RAgrid.shape:
+            # Check that the shape of the initial mask is the same as the
+            # grid.
+            errMsg = f"initalMask.shape {initalMask.shape} != RAgrid.shape +"
+            f" {RAgrid.shape}"
+            raise ValueError(errMsg)
+        else:
+            cleanMaskList.append(initalMask)
+
+    # Making the final clean mask by multiplying all masks together.
+    cleanMask = np.copy(cleanMaskList[0])
+    for ind,maskGrid in enumerate(cleanMaskList):
+        if ind > 0:
+            cleanMask *= maskGrid
+
+    # If True plot the clean mask for visual inspection.
+    if plotCond:
+        plot_dirty_image(cleanMask,cmap='grey',norm='linear',title='CLEAN mask')
+
+    return cleanMask
 
 def calc_psf_weights_matrix(m,B,almTensorList,lMaxVec,lMax=None,damp=0.01,
                             weights=None):
