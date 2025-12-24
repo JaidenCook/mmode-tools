@@ -1,7 +1,7 @@
 **.mmode_tools/
 *.pyc
 *.python-version
-**mmode_tools.egg-info/
+**./src/mmode_tools.egg-info/
 *.DS_Store
 *src/mmode_tools/config/default_config.toml
 
