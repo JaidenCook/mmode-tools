@@ -613,7 +613,7 @@ def filter_coefficients(coeffs,lmax=200,lcut=130,lwin=None,
 
 def calc_fisher_coeffs(almTensorList,noiseVec,lMax=None,
                        smoothCond=False,lMaxVec=None,
-                       window=None,relOffset=1):
+                       window=None,relOffset=None,absOffset=None):
     """
     This function calculates the Fisher information for a given set of beam
     fringe coefficients for N instruments, and for a set of associated 
@@ -686,26 +686,32 @@ def calc_fisher_coeffs(almTensorList,noiseVec,lMax=None,
         # Applying a mask for the zero value FI coeffs.
         FImask = FIcoeffs[i,:,:,:]>0
 
-        if isinstance(relOffset,(float,int)):
-            scale = relOffset
-        elif isinstance(relOffset,(list,np.ndarray)):
-            if len(relOffset) != NbaseVec.size:
-                raise ValueError(f"relOffset should have size {NbaseVec.size}" \
-                                 " not size {len(relOffset)}.")
-            else:
-                # If the relative offset is a list or vector index for the 
-                # appropriate value.
-                scale = relOffset[i]
-
-        eps = scale*np.nanmedian(FIcoeffs[i,:,:,:][FIcoeffs[i,:,:,:]>0])
-        # setting zero value FI coefficients to the median. Zeros cause issues
-        # in the inversion process.
-        FIcoeffs[i,FImask] += eps
+        if relOffset is not None:
+            if isinstance(relOffset,(float,int)):
+                scale = relOffset
+            elif isinstance(relOffset,(list,np.ndarray)):
+                if len(relOffset) != NbaseVec.size:
+                    raise ValueError(f"relOffset should have size {NbaseVec.size}" \
+                                    " not size {len(relOffset)}.")
+                else:
+                    # If the relative offset is a list or vector index for the 
+                    # appropriate value.
+                    scale = relOffset[i]
+            eps = scale*np.nanmedian(FIcoeffs[FImask])
+            # setting zero value FI coefficients to the median. Zeros cause issues
+            # in the inversion process.
+            FIcoeffs[i,FImask] += eps
+        
         # Incrementing the baseline sum.
         NbSum += NbaseVec[i]
     
     # Summing the Fisher coefficients from all the instruments. 
     FIcoeffsSum = np.nansum(FIcoeffs,axis=0)
+
+    # Condition for an absolute FI offset.
+    if absOffset is not None:
+        FImask = FIcoeffsSum > 0
+        FIcoeffsSum[FImask] += absOffset*np.nanmedian(FIcoeffsSum[FImask])
     
     # Smoothing the FI coeffs if required.
     if smoothCond:
