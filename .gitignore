@@ -26,3 +26,7 @@ share/python-wheels/
 SOURCES.txt
 PKG-INFO
 entry_points.txt
+src/mmode_tools.egg-info/entry_points.txt
+src/mmode_tools/config/default_config.toml
+src/mmode_tools.egg-info/PKG-INFO
+src/mmode_tools.egg-info/SOURCES.txt
