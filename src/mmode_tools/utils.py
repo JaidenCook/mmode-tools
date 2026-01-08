@@ -388,9 +388,8 @@ def load_data(configFilePath,lMax=160,freq=160,calcWeights=False,
     return mmodeTensor,almTensorList,weights
 
 def data2map(mmodeTensor,almTensorList,weights,invert=invert_tikh_multi_assym,
-             lMax=160,mMax=None,damp=0.01,rtol=1e-4,lMaxVec=None,
-             verbosity=10,njobs=1,
-             Niter=10,returnGrid=False,returnCoeffs=False,**kwargs):
+             lMax=160,mMax=None,damp=0.01,lMaxVec=None,verbosity=10,njobs=1,
+             returnGrid=False,returnCoeffs=False,**kwargs):
     """
     
     Parameters
@@ -426,10 +425,36 @@ def data2map(mmodeTensor,almTensorList,weights,invert=invert_tikh_multi_assym,
     if lMaxVec is None:
         lMaxVec = [alm.shape[-1]-1 for alm in almTensorList]
 
+    if np.any(weights):
+        if weights.size != mmodeTensor.shape[0]:
+            raise ValueError(f'Weights shape {weights.size} should match mmode tensor shape' +\
+                            f' axis 0 size {mmodeTensor.shape[0]}')
+        else:
+            if verbosity > 0:
+                print("Applying weights to the data and transfer matrices.")
+            weights = np.asarray(weights,dtype=np.complex64)
+
+            mmodeTensor *= weights[:,None,None]
+            NbVec = np.array([alm.shape[0] for alm in almTensorList])
+            NbSum = 0
+            for ind,alm in enumerate(almTensorList):
+                Nb = NbVec[ind]
+                almTensorList[ind] *= weights[NbSum:NbSum+Nb,None,None]
+                NbSum += Nb
+
+    if isinstance(damp,np.ndarray):
+        # Type of the data is np.complex64, or real is float32. If damping
+        # coefficients are float64, this leads to type promotion in the 
+        # inversion step, which inevitably increases the time per 
+        # inversion.
+        if damp.dtype == np.float64:
+            damp = np.asarray(damp,dtype=np.float32)
+        print(damp.dtype)
+        
     # Performing the inversion step.
     skyCoTensor=invert(almTensorList,np.conj(mmodeTensor),lmax=lMax,mmax=mMax,
-                       rtol=rtol,verbosity=verbosity,damp=damp,njobs=njobs,
-                       lMaxVec=lMaxVec,Niter=Niter,weights=weights,**kwargs)
+                       verbosity=verbosity,damp=damp,njobs=njobs,
+                       lMaxVec=lMaxVec,weights=None,**kwargs)
     #
     sphericalCoeffs = SHCoeffs.from_array(skyCoTensor,normalization='ortho',
                                           csphase=-1)
