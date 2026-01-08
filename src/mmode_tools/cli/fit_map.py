@@ -90,18 +90,33 @@ helpList = ["Data configuration file, should be .toml.",
 
 def fit_map_main(
     config_file: Annotated[str,typer.Argument(help=helpList[0])] = "",
-    lmax: Annotated[Optional[List[int]],typer.Option("--lmax","-l",help=helpList[1])] = [130],
+    lmax: Annotated[Optional[List[int]],typer.Option("--lmax","-l",
+                                                     help=helpList[1])] = [130],
     damp: Annotated[float,typer.Option("--damp","-d",help=helpList[2])] = 0.01,
-    inpath: Annotated[str,typer.Option("--inpath","-i",help=helpList[3])] = defaultInPath,
-    outpath: Annotated[str,typer.Option("--outpath","-O",help=helpList[4])] = defaultOutPath,
-    outname: Annotated[str,typer.Option("--outname","-o",help=helpList[5])] = None,
-    plot: Annotated[bool,typer.Option("--plot","-p",help=helpList[6])] = False,
-    calc_fisher: Annotated[bool,typer.Option("--calc-fisher","-F",help=helpList[7])] = False,
-    filterCond: Annotated[bool,typer.Option("--filter",help=helpList[8])] = False,
-    flag_mmodes: Annotated[bool,typer.Option("--flag-mmodes",help=helpList[9])] = False,
-    weightsCond: Annotated[bool,typer.Option("--calc-weights",help=helpList[10])] = False,
+    inpath: Annotated[str,typer.Option("--inpath","-i",
+                                       help=helpList[3])] = defaultInPath,
+    outpath: Annotated[str,typer.Option("--outpath","-O",
+                                        help=helpList[4])] = defaultOutPath,
+    outname: Annotated[str,typer.Option("--outname","-o",
+                                        help=helpList[5])] = None,
+    plot: Annotated[bool,typer.Option("--plot","-p",
+                                      help=helpList[6])] = False,
+    calc_fisher: Annotated[bool,typer.Option("--calc-fisher","-F",
+                                             help=helpList[7])] = False,
+    filterCond: Annotated[bool,typer.Option("--filter",
+                                            help=helpList[8])] = False,
+    flag_mmodes: Annotated[bool,typer.Option("--flag-mmodes",
+                                             help=helpList[9])] = False,
+    weightsCond: Annotated[bool,typer.Option("--calc-weights",
+                                             help=helpList[10])] = False,
     verbose: Annotated[bool,typer.Option("-v",help=helpList[11])] = False
 ):
+
+    if os.path.exists(inpath+config_file) == False:
+        errMsg = f"File {inpath+config_file} not found. Check input path is " +\
+                 "correct."
+        raise FileNotFoundError(errMsg)
+    
     # Loading in the some of the important meta data.
     with open(inpath+config_file,'r') as f:
         configDict = toml.load(f)
@@ -201,11 +216,12 @@ def fit_map_main(
                                   lMaxVec=lMaxVec,absOffset=1e-1)
         # Only need the positive m-mode regularisation parameters.
         damp = damp[0,:lMax+1,:lMax+1]
+    
     #
+    print("Performing the inversion.")
+    print_full_line(character='=')
     if verbose:
         verbosity = 10
-        print("Performing the inversion.")
-        print_full_line(character='=')
     else:
         verbosity = 0
     # Perform the inversion, return the CAR map and the coefficients.
