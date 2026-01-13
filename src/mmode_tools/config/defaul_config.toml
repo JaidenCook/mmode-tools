@@ -1,0 +1,11 @@
+[paths]
+interferometerPath = "/mmode_tools/interferometers/"
+covTensorPath = "/mmode_tools/covtensors/"
+beamPath = "/mmode_tools/beam_models/primary_beam_models/"
+beamFringePath = "/mmode_tools/beam_models/beam_fringe_coefficients/"
+fitCoeffPath = "/mmode_tools/fit_coefficients/"
+dirtyCoeffsPath = "/mmode_tools/fit_coefficients/dirty/"
+cleanCoeffsPath = "/mmode_tools/fit_coefficients/clean/"
+
+[files]
+MWA_BEAM_FILE = "" # mwa_hyperbem FEE beam model location, set by user.
