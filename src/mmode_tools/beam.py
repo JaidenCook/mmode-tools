@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 import pyshtools
@@ -185,7 +186,10 @@ def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
             outName += f"-{compression}.hdf5"
         else:
             outName += f".hdf5" 
-        outFilePath = outPath+outName
+        outFilePath = Path(outPath+outName)
+
+    if isinstance(outFilePath,str):
+        outFilePath = Path(outFilePath)
 
     hf = h5.File(outFilePath,'w')
     g = hf.create_group('data')
@@ -220,7 +224,7 @@ def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
 
     hf.close()
 
-    print(f"File saved to {outFilePath}")
+    print(f"File saved to {outFilePath._str}")
 
     return None
 

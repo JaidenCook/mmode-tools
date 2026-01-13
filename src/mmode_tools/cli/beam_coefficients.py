@@ -9,6 +9,7 @@ Command line tool for generating the beam fringe spherical harmonic
 coefficients for a given telescope configuration and primary beam model.
 """
 
+from pathlib import Path
 import typer
 from typing_extensions import Annotated
 import toml
@@ -29,30 +30,35 @@ interferometerPath = get_config_directory(pathName="interferometerPath")
 beamPath = get_config_directory(pathName="beamPath")
 defaultOutPath = get_config_directory(pathName="beamFringePath")
 
+helpList = ["Telescope configuration file name.",
+            "File path to the beam coefficients text file.",
+            "Instrument polarisation, default is XX.",
+            "Frequency channel in Hz, default is 160MHz.",
+            "Maximum spherical harmonic degree, default = 130.",
+            "Location of the output directory",
+            "Location of the output directory",
+            "Plot the primary beam map in RA/DEC.",
+            "If True chunk the coefficients.",
+            "Compression to use, only works if chunks set to True.",
+            "Print additional information."]
+
 def beam_coefficients_main(
-    config_file: Annotated[str,
-                         typer.Argument(help="Telescope configuration file name.")] = "",
+    config_file: Annotated[str,typer.Argument(help=helpList[0])] = "",
     beam_file: Annotated[str,
-                         typer.Option("-b","--beam-file",help="File path to the beam coefficients text file.")] = "",
-    pol: Annotated[str,
-                   typer.Option("-P","--pol",help="Instrument polarisation, default is XX.")] = "XX",
-    freq: Annotated[float,
-                   typer.Option("-f","--freq",help="Frequency channel in Hz, default is 160MHz.")] = 150e6,
-    lmax: Annotated[int,
-                   typer.Option("-l","--lmax",
-                                help="Maximum spherical harmonic degree, default = 130.")] = 130,
-    outpath: Annotated[str,
-                       typer.Option("-O","--outpath",help="Location of the output directory")] = defaultOutPath,
-    outname: Annotated[str,
-                       typer.Option("-o","--outname",help="Location of the output directory")] = None,
-    plot: Annotated[bool,
-                       typer.Option("-p","--plot",help="Plot the primay beam map in RA/DEC.")] = False,
-    chunks: Annotated[bool,
-                       typer.Option("-c",help="If True chunk the coefficients..")] = False,
-    compression: Annotated[str,
-                         typer.Option("--compression",help="Compression to use, only works if chunks set to True..")] = "lzf",
-    verbose: Annotated[bool,
-                       typer.Option("-v","--verbose",help="Print additional information.")] = False
+                         typer.Option("-b","--beam-file",help=helpList[1])] = "",
+    pol: Annotated[str,typer.Option("-P","--pol",help=helpList[2])] = "XX",
+    freq: Annotated[float,typer.Option("-f","--freq",help=helpList[3])] = 150e6,
+    lmax: Annotated[int,typer.Option("-l","--lmax",help=helpList[4])] = 130,
+    outpath: Annotated[str,typer.Option("-O","--outpath",
+                                        help=helpList[5])] = defaultOutPath,
+    outname: Annotated[str,typer.Option("-o","--outname",
+                                        help=helpList[6])] = None,
+    plot: Annotated[bool,typer.Option("-p","--plot",help=helpList[7])] = False,
+    chunks: Annotated[bool,typer.Option("-c",help=helpList[8])] = False,
+    compression: Annotated[str,typer.Option("--compression",
+                                            help=helpList[9])] = "lzf",
+    verbose: Annotated[bool,typer.Option("-v","--verbose",
+                                         help=helpList[10])] = False
 ):
     
     if verbose:
@@ -67,16 +73,19 @@ def beam_coefficients_main(
         print(f"Chunks: {chunks}")
         print(f"Compression: {compression}")
     
+    if isinstance(outpath,str):
+        outpath = Path(outpath)
+
     # Check that the output that exists if not make it.
     if not os.path.exists(outpath):
         raise FileNotFoundError(f"The {outpath} does not exist.")
 
-    if not os.path.exists(interferometerPath+config_file):
+    if not os.path.exists(interferometerPath/config_file):
         raise FileNotFoundError(f"The specified configuration file does not " +\
                                 f"exist: {config_file}")
 
 
-    with open(interferometerPath+config_file, 'r') as f:
+    with open(interferometerPath/config_file, 'r') as f:
         config = toml.load(f)
         arrayLat = config['location']['lat']
         telescope = config['params']['telescope']
@@ -88,7 +97,7 @@ def beam_coefficients_main(
     elif (telescope == "EDA2") and override:
         Array = EDA2array
     else:
-        Array = make_radio_array(interferometerPath+config_file,lat=arrayLat)
+        Array = make_radio_array(interferometerPath/config_file,lat=arrayLat)
 
     if outname == None:
         outName = "beam_fringe_coeffs"
@@ -110,7 +119,7 @@ def beam_coefficients_main(
     else:
         outName = outname
 
-    outFilePath = outpath+outName
+    outFilePath = outpath/outName
     #
     Ncells = int(2*lmax+2)
 

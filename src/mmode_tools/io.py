@@ -8,6 +8,9 @@ from warnings import warn
 import toml
 import os
 from mmode_tools.constants import c,MRO,ONSALA
+from pathlib import Path
+
+BASEDIR = Path.home() / "mmode_tools/"
 
 
 def get_config_directory(pathName=None):
@@ -24,12 +27,11 @@ def get_config_directory(pathName=None):
     
     Returns
     -------
-    path : str
+    path : Path object
         Absolute path.
     """
     import importlib.resources as resources
 
-    HOMEDIR = os.path.expanduser("~")
     configFile = "default_config.toml"
     mmodeConfigPath = "mmode_tools.config"
 
@@ -38,12 +40,13 @@ def get_config_directory(pathName=None):
         directoryDict = config.get("paths", {})
 
     if pathName is not None:
-        path = HOMEDIR + directoryDict[pathName]
+        path = BASEDIR / directoryDict[pathName]
         return path
     else:
         print("List of mmode_tools directories by key:")
         for pathKey in list(directoryDict.keys()):
-            print(f"{pathKey}: " +HOMEDIR+directoryDict[pathKey])
+            dirName = (BASEDIR / directoryDict[pathKey])._str
+            print(f"{pathKey}: " + dirName)
         
         return None
 
@@ -882,7 +885,7 @@ def read_data_config(configPath,returnDates=False):
     """
     from mmode_tools.interferometers import make_radio_array
     
-    with open(configPath, 'r') as f:
+    with open(configPath,'r') as f:
         config = toml.load(f)
         arrFilePaths = config["data"]["file_paths"]
         beamFringeFilePaths = config["beams"]["file_paths"]

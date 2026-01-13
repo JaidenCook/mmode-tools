@@ -486,9 +486,10 @@ class RadioArray:
                          override=override)
 
 
-def make_config_file(outPath=interferometerPath,Interferometer=None,arrayLocs=None,LAT=0,
-                     LON=0,HEIGHT=None,antIDs=None,telescope=None,
-                     arrayLayout=None,verbose=False,override=True):
+def make_config_file(outPath=interferometerPath,Interferometer=None,
+                     arrayLocs=None,LAT=0,LON=0,HEIGHT=None,antIDs=None,
+                     telescope=None,arrayLayout=None,verbose=False,
+                     override=True,outName=None):
     """
     Function for creating a RadioArray configuration file. 
 
@@ -545,14 +546,20 @@ def make_config_file(outPath=interferometerPath,Interferometer=None,arrayLocs=No
     if telescope is None:
         telescope = f'N{Nant}'
     
-    if HEIGHT is None:
+
+    if HEIGHT is None and height is not None:
         weights = 1/np.sqrt((east-east.mean())**2 + (north-north.mean())**2)
         # Perform weighted average, antennas closer to array centre should 
         # have a higher weighting.
         HEIGHT = np.average(height,weights=weights)
+    else:
+        # assume sea level.
+        HEIGHT = 0.0
     
     # Create the output file path, use telescope name for naming convention.
-    outName = f'{telescope}_config.toml'
+    if outName is None:
+        outName = f'{telescope}_config.toml'
+    #
     outFilePath = os.path.join(outPath,outName)
 
     if arrayLayout is None:
@@ -584,6 +591,7 @@ def make_config_file(outPath=interferometerPath,Interferometer=None,arrayLocs=No
         toml.dump(telescopeConfig, f)
     
     if verbose:
+        print(east[:10],north[:10],height[:10])
         print(f"Telescope: {telescope}")
         print(f"Latitude: {LAT} [rad]")
         print(f"Longitude: {LON} [rad]")
@@ -648,10 +656,10 @@ def make_radio_array(filePath=None,eastNorthHeight=None,lat=None,lon=None,
     return outClass()
 
 
-mwaFilepath = interferometerPath + 'antenna_locations_mwa_Feb_24.txt'
-eda2Filepath = interferometerPath + 'antenna_locations_eda2.txt'
-mwaextFilepath = interferometerPath + 'antenna_locations_mwaPHII_extnd.txt'
-onsalaFilepath = interferometerPath + 'antenna_locations_SE607HBA_SEPTON.txt'
+mwaFilepath = interferometerPath / 'antenna_locations_mwa_Feb_24.txt'
+eda2Filepath = interferometerPath / 'antenna_locations_eda2.txt'
+mwaextFilepath = interferometerPath / 'antenna_locations_mwaPHII_extnd.txt'
+onsalaFilepath = interferometerPath / 'antenna_locations_SE607HBA_SEPTON.txt'
 
 # Making child classes for a couple of regularly used arrays.
 # These are what is exported.

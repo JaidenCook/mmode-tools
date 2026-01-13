@@ -9,6 +9,7 @@ Command line tool for fitting sky maps to data and generating dirty sky
 coefficients.
 """
 
+from pathlib import Path
 import typer
 from typing_extensions import Annotated
 from typing import List, Optional
@@ -102,8 +103,12 @@ def fit_map_main(
     weightsCond: Annotated[bool,typer.Option("--calc-weights",help=helpList[10])] = False,
     verbose: Annotated[bool,typer.Option("-v",help=helpList[11])] = False
 ):
+
+    if isinstance(inpath,str):
+        inpath = Path(inpath)
+
     # Loading in the some of the important meta data.
-    with open(inpath+config_file,'r') as f:
+    with open(inpath/config_file,'r') as f:
         configDict = toml.load(f)
         freq = configDict['params']['freq']
         lMaxVec = np.array(configDict['params']['lMaxList'])
@@ -129,7 +134,7 @@ def fit_map_main(
     # noise on the mmodes. That's because we use the noise dominated modes to 
     # estimate the noise amplitude from the difference visibilities. If lmax
     # is too low then longer baselines don't get accurate noise estimates.
-    mmodeTensor,almTensorList,weights = load_data(inpath+config_file,
+    mmodeTensor,almTensorList,weights = load_data(inpath/config_file,
                                                   lMax=int(lMaxVec.max()),
                                                   freq=freq,
                                                   calcWeights=weightsCond,

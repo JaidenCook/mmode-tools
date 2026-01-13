@@ -11,6 +11,7 @@ Command line tool for generating telescope configuration files.
 import typer
 from typing_extensions import Annotated
 import toml
+from pathlib import Path
 import numpy as np
 import os
 import importlib.resources as resources
@@ -21,36 +22,20 @@ from mmode_tools.io import get_config_directory
 
 defaultPath = get_config_directory(pathName="interferometerPath")
 
-
+helpList = ["File path to the array layout text file. Should be east, north, height.",
+            "Telescope name.","Latitude of the array. Default is 0.",
+            "Longitude of the array. Default is 0.",
+            "Location of the output directory","Override existing file.",
+            "Print additional information."]
 def telescope_config_main(
-    array_layout: Annotated[str,
-                            typer.Argument(help="File path to the array layout text file. Should be east, north, height.")] = "",
-    telescope: Annotated[str,
-                         typer.Option("--name",help="Telescope name.")] = "",
-    lat: Annotated[float,
-                   typer.Option("-d",help="Latitude of the array. Default is 0.")] = 0,
-    lon: Annotated[float,
-                   typer.Option("-r",
-                                help="Longitude of the array. Default is 0.")] = 0,
-    height: Annotated[float,
-                   typer.Option("-h",
-                                help="Height of the array.")] = 0,
-    outpath: Annotated[str,
-                       typer.Option("-o",help="Location of the output directory")] = defaultPath,
-    override: Annotated[bool,
-                       typer.Option("-O",help="Override existing file.")] = False,
-    verbose: Annotated[bool,
-                       typer.Option("-v",help="Print additional information.")] = False
+    array_layout: Annotated[str,typer.Argument(help=helpList[0])] = "",
+    telescope: Annotated[str,typer.Option("--name",help=helpList[1])] = "",
+    lat: Annotated[float,typer.Option("-d",help=helpList[2])] = 0,
+    lon: Annotated[float,typer.Option("-r",help=helpList[3])] = 0,
+    outpath: Annotated[str,typer.Option("-o",help=helpList[4])] = defaultPath,
+    override: Annotated[bool,typer.Option("-O",help=helpList[5])] = False,
+    verbose: Annotated[bool,typer.Option("-v",help=helpList[6])] = False
 ):
-    
-    if verbose:
-        print(f"Telescope: {telescope}")
-        print(f"Array layout file: {array_layout}")
-        print(f"Latitude: {lat}")
-        print(f"Longitude: {lon}")
-        print(f"Your output directory is {outpath}")
-        print(f"Override existing file: {override}")
-        print(f"Verbose: {verbose}")
     
      # Checking that the array layout file and the beam file path exist.
     if not os.path.exists(array_layout):
@@ -62,15 +47,31 @@ def telescope_config_main(
 
     if telescope == "":
         Nant = east.shape[0]
-        if lat >= 0:
+        if lat != 0:
             latStr = f"+{int(lat)}"
         name = f"N{Nant}_{lon}{latStr}"
     else:
         name = telescope
 
+    if isinstance(outpath,str):
+        print('String Bring Ling Ling')
+        outpath = Path(outpath)
+      
     outName = f"{name}_config.toml"
-    outFilePath = outpath + outName
+    outFilePath = outpath / outName
+    
+    if verbose:
+        print(f"Telescope: {telescope}")
+        print(f"Array layout file: {array_layout}")
+        print(f"Latitude: {lat}")
+        print(f"Longitude: {lon}")
+        print(f"Your output directory is {outpath}")
+        print(f"Override existing file: {override}")
+        print(f"Verbose: {verbose}")
+        print(f"Output file path: {outFilePath}")
+
     # Writing the output configuration file.
-    make_config_file(outFilePath,arrayLocs=(east,north,height),LAT=lat,LON=lon,
-                     HEIGHT=height,antIDs=antIDs,telescope=name,
-                     arrayLayout=array_layout,verbose=True)
+    make_config_file(outpath,arrayLocs=(east,north,height),LAT=lat,LON=lon,
+                     HEIGHT=None,antIDs=antIDs,telescope=name,
+                     arrayLayout=array_layout,verbose=True,
+                     outName=outName)

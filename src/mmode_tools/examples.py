@@ -3,10 +3,11 @@ from mmode_tools.beam import FITS2beam,analytic_dipole_beam
 import numpy as np
 import os
 from mmode_tools.io import get_config_directory
+from pathlib import Path
 
 dataPath = resources.files('mmode_tools.data')
 siderealDay2SolarDay = 23.9345/24
-interferometrPath = get_config_directory(pathName="interferometerPath")
+# All paths should be pathlib Path objects now.
 beamFringePath = get_config_directory(pathName="beamFringePath")
 covTensorPath = get_config_directory(pathName="covTensorPath")
 
@@ -92,7 +93,6 @@ def load_model_map(freq=150e6):
         
     return haslamMap
 
-
 def load_example_interferometer():
     """
     Loads the example 32 element psuedo random uniform array.
@@ -131,10 +131,10 @@ def make_point_covtensor(freq=150e6,raSrc=0,decSrc=0,srcFlux=1.0,lMax=130):
 
     # Output filepath for the covariance tensor.
     fileName = f"point_source_covtensor_{telescopeName}_150MHz.h5"
-    outFilePath = covTensorPath + fileName
+    outFilePath = covTensorPath / fileName
 
     # Checking that the example dataset does not already exist.
-    if not os.path.exists(outFilePath):
+    if not outFilePath.exists():
         # Getting the current date, this is assumed to be the observing time.
         date = datetime.datetime.utcnow()
 
@@ -144,8 +144,8 @@ def make_point_covtensor(freq=150e6,raSrc=0,decSrc=0,srcFlux=1.0,lMax=130):
                    for dt in dtVec]
 
         arrayLoc = EarthLocation(lat=interferometer.lat*u.deg,
-                            lon=interferometer.lon*u.deg,
-                            height=np.mean(interferometer.height)*u.m)
+                                 lon=interferometer.lon*u.deg,
+                                 height=np.mean(interferometer.height)*u.m)
 
 
         t = Time(dateVec,format='isot',scale='utc',location=arrayLoc)
@@ -159,7 +159,7 @@ def make_point_covtensor(freq=150e6,raSrc=0,decSrc=0,srcFlux=1.0,lMax=130):
         # Constructing the full covariance tensor.
         Npol = 4 # Number of instrumental pol, XX,YY,XY,YX ordering.
         covTensor = np.zeros((tgpsVec.size,Npol) + covTensorXX[0,:,:].shape,
-                            dtype=np.complex64)
+                             dtype=np.complex64)
 
         covTensor[:,0,:,:] = covTensorXX # Assuming identical beams for now.
         covTensor[:,1,:,:] = covTensorXX # Assuming identical beams for now.
@@ -173,7 +173,7 @@ def make_point_covtensor(freq=150e6,raSrc=0,decSrc=0,srcFlux=1.0,lMax=130):
 
         # If the covariance tensor doesn't exist we will write it out.
         writeCovTensor(lstVec,covTensor,tgpsVec,outFilePath,flagInds=flagInds,
-                        flagBlines=flagBlines,overwrite=True)
+                       flagBlines=flagBlines,overwrite=True)
 
         # Each instrumental polarisation is treated as a separate entry.
         stokesList = ["XX","YY"]
@@ -181,12 +181,13 @@ def make_point_covtensor(freq=150e6,raSrc=0,decSrc=0,srcFlux=1.0,lMax=130):
         interferometers = {interferometer.telescope : interferometer,
                         interferometer.telescope : interferometer,}
         telescopes = [interferometer.telescope,interferometer.telescope]
-        beamFringeFilePaths = [beamFringePath + "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5",
-                            beamFringePath + "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5"]
+        beamFringeFilePaths = [beamFringePath / "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5",
+                            beamFringePath / "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5"]
 
         configOutPath = covTensorPath
         configFileName = f"point_source_covtensor_{telescopeName}_150MHz_config.toml"
-        configFilePath = os.path.join(configOutPath,configFileName)
+        #
+        configFilePath = Path.joinpath(configOutPath,configFileName)
 
         if not os.path.exists(configFilePath):
             write_data_config(configFilePath,arrFilePaths,interferometers,
@@ -220,9 +221,9 @@ def make_haslam_covtensor(freq=150e6,lMax=130):
 
     # Output filepath for the covariance tensor.
     fileName = f"haslam_covtensor_{telescopeName}_150MHz.h5"
-    outFilePath = covTensorPath + fileName
+    outFilePath = covTensorPath / fileName
 
-    if not os.path.exists(outFilePath):
+    if not outFilePath.exists():
 
         date = datetime.datetime.utcnow()
 
@@ -306,12 +307,14 @@ def make_haslam_covtensor(freq=150e6,lMax=130):
                         interferometer.telescope : interferometer,}
         telescopes = [interferometer.telescope,interferometer.telescope]
         #dates = ["",""]
-        beamFringeFilePaths = [beamFringePath + "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5",
-                            beamFringePath + "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5"]
+        beamFringeFilePaths = [beamFringePath / "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5",
+                            beamFringePath / "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5"]
 
         configOutPath = covTensorPath
         configFileName = f"haslam_covtensor_{telescopeName}_150MHz_config.toml"
-        configFilePath = os.path.join(configOutPath,configFileName)
+        #
+        configFilePath = Path.joinpath(configOutPath,configFileName)
+
 
         if not os.path.exists(configFilePath):
             write_data_config(configFilePath,arrFilePaths,interferometers,
@@ -319,3 +322,13 @@ def make_haslam_covtensor(freq=150e6,lMax=130):
                               freq=150e6,lMaxList=[int(lMax),int(lMax)])
 
     return None
+
+def test_environment_var():
+    """test_environment_var print the base directory, and the home directory
+    """
+    from mmode_tools.io import BASEDIR
+
+    testDir = os.getenv("HOME")
+
+    print("Base dir:",BASEDIR._str)
+    print("testDir:",testDir)
