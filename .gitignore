@@ -4,6 +4,7 @@
 **./src/mmode_tools.egg-info/
 *.DS_Store
 *src/mmode_tools/config/default_config.toml
+./src/mmode_tools/config/default_config.toml
 
 # Distribution / packaging
 .Python
