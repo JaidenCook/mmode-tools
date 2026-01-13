@@ -32,3 +32,4 @@ src/mmode_tools/config/default_config.toml
 config/default_config.toml
 src/mmode_tools.egg-info/PKG-INFO
 src/mmode_tools.egg-info/SOURCES.txt
+src/mmode_tools/config/defaul_config.toml
