@@ -58,7 +58,8 @@ def fit_restoring_beam(xdata_tuple,data,coord):
 
     return amp,sigx,sigy
 
-def calc_psf_map(pointCoord,weightsTensor,dirtyMapShape,returnCoeffs=False):
+def calc_psf_map(pointCoord,weightsTensor,dirtyMapShape,returnCoeffs=False,
+                 scale=1):
     """
     Function calculates the psf map for a given x and y pixel coordinate.
 
@@ -90,7 +91,7 @@ def calc_psf_map(pointCoord,weightsTensor,dirtyMapShape,returnCoeffs=False):
     # time.
     xcoord,ycoord = pointCoord
     pointMap = np.zeros(dirtyMapShape)
-    pointMap[int(ycoord),int(xcoord)] = 1
+    pointMap[int(ycoord),int(xcoord)] = 1*scale
 
     mapPrep = SHGrid.from_array(np.array(pointMap,dtype=np.complex64))
     # Set to zero for the next iteration.
@@ -196,6 +197,55 @@ def forward_model_psf(pointMap,almTensor,lMax=129,rtol=1e-16,verbosity=10,
     else:
         return mapPSF
 
+def calc_bkg(skyCo,windowSizeDeg=6,returnWindow=False):
+    """calc_bkg _summary_
+
+    Parameters
+    ----------
+    skyCo : _type_
+        _description_
+    windowSizeDeg : int, optional
+        _description_, by default 6
+    returnWindow : bool, optional
+        _description_, by default False
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    lMax = skyCo.shape[-1] - 1
+
+    if windowSizeDeg is None:
+        skyCoeffs = SHCoeffs.from_array(skyCo,normalization='ortho',
+                                           csphase=-1,lmax=lMax)
+        skyMapOb = skyCoeffs.expand(grid='DH2',backend='ducc',lmax=lMax)
+        bkgMap = np.median(skyMapOb.data.real)*np.ones_like(skyMapOb.data.real)
+        windowSizePix = None
+
+    else:
+        Ncells = skyCo.shape[1]*4 + 1
+        windowSizePix = int(windowSizeDeg/(360/Ncells)) + 1
+
+        if windowSizePix % 2 == 0:
+            windowSizePix += 1
+
+        # Calculating the background estimate. Using a Gaussian to low pass 
+        # filter the coefficients. In future can use a different filter.
+        lsig = 2*np.pi*(1/(np.radians(360/Ncells)*windowSizePix))
+        lVec = np.arange(lMax+1)
+        skyCoLPF = np.copy(skyCo)
+        skyCoLPF[:,:lMax+1,:lMax+1] *= np.exp(-0.5*(lVec/lsig)**2)[None,:,None]
+        skyCoeffsLPF = SHCoeffs.from_array(skyCoLPF,normalization='ortho',
+                                           csphase=-1,lmax=lMax)
+        skyMapObjLPF = skyCoeffsLPF.expand(grid='DH2',backend='ducc',lmax=lMax)
+        bkgMap = skyMapObjLPF.data.real
+
+    if returnWindow:
+        return bkgMap,windowSizePix
+    else:
+        return bkgMap
+
 def make_thresh_maps(dirtyMap,skyCo,windowSizeDeg=6):
     """
     Makes the threshold map. Smooths the dirty image, subtracts the smoothed 
@@ -221,28 +271,22 @@ def make_thresh_maps(dirtyMap,skyCo,windowSizeDeg=6):
     threshMap : np.float64, np.ndarray
         Threshold map in units of sigma, used for peak detection.
     """
-    Ncells = dirtyMap.shape[1]
-    windowSizePix = int(windowSizeDeg/(360/Ncells)) + 1
+    bkgMap,windowSizePix = calc_bkg(skyCo,windowSizeDeg=windowSizeDeg,
+                                    returnWindow=True)
+    
+    if windowSizePix is None:
+        Ncells = skyCo.shape[1]*4 + 1
+        windowSizePix = int(6/(360/Ncells)) + 1
 
-    if windowSizePix % 2 == 0:
-        windowSizePix += 1
-    
-    # Calculating the background estimate. Using a Gaussian to low pass filter
-    # the coefficients. In future can use a different filter.
-    lsig = 2*np.pi*(1/(np.radians(360/Ncells)*windowSizePix))
-    lMax = skyCo.shape[-1] - 1
-    lVec = np.arange(lMax+1)
-    skyCoLPF = np.copy(skyCo)
-    skyCoLPF[:,:lMax+1,:lMax+1] *= np.exp(-0.5*(lVec/lsig)**2)[None,:,None]
-    skyCoeffsLPF = SHCoeffs.from_array(skyCoLPF,normalization='ortho',csphase=-1,
-                                   lmax=lMax)
-    skyMapObjLPF = skyCoeffsLPF.expand(grid='DH2',backend='ducc',lmax=lMax)
-    bkgMap = skyMapObjLPF.data.real
-    
     print(f"Window size = {windowSizePix}")
 
     diffMap = (dirtyMap.real-bkgMap)
-    stdMap =  np.sqrt(generic_filter(diffMap**2,np.median,size=windowSizePix))
+    # Cal factor corrects for underestimate of the variance from using the 
+    # median. Here we are using the MAD (Median Absolute Deviation) to 
+    # estimate the local standard deviation.
+    calFactor = 1.4826
+    stdMap =  calFactor*generic_filter(np.abs(diffMap),np.median,
+                                    size=windowSizePix)
     
     threshMap = diffMap/stdMap
 
@@ -277,7 +321,6 @@ def find_good_peaks(threshMap,thresh=4,cleanMask=None,
     coords : np.float64 np.ndarray
         2D numpy array containing peak xy-coordinates.
     """
-    # TODO: Refactor the masking. This can be greatly simplified.
 
     from skimage.feature import peak_local_max
     # If not None apply a CLEAN mask, only find point within the masked region.
@@ -296,6 +339,9 @@ def find_good_peaks(threshMap,thresh=4,cleanMask=None,
                             threshold_abs=threshold_abs)
     threshVec = threshMap[coords[:,0],coords[:,1]]
     coords = coords[threshVec>=thresh,:]
+
+    #yGrid,xGrid = np.mgrid[0:threshMap.shape[0],0:threshMap.shape[1]]
+    #coords = np.array([yGrid[threshMap>=thresh],xGrid[threshMap>=thresh]]).T
 
 
     return coords
@@ -380,9 +426,9 @@ def plot_dirty_image(dirtyMap,coords=None,figaxs=None,cmap='twilight_shifted',
                                        winx,winy,edgecolor='k',facecolor='none')
             axs.add_patch(square)
 
-def make_resid_map(modelMap,almTensor,mmodeTensor,lMax=130,lMaxVec=None,
-                   verbosity=1,damp=0.5,plotCond=False,vmin=-1e6,vmax=1e6,
-                   linear_width=1e5):
+def make_resid_map(model,almTensor,mmodeTensor,weights=None,lMax=130,lMaxVec=None,
+                   mMax=None,verbosity=1,damp=0.5,returnCoeffs=False,plotCond=False,
+                   vmin=-1e6,vmax=1e6,linear_width=1e5):
     """
     Takes input model image, beam fringe coefficients, and mmode visibility data
     tensor. Performs a subtraction of the model from the data, and solves for 
@@ -391,8 +437,8 @@ def make_resid_map(modelMap,almTensor,mmodeTensor,lMax=130,lMaxVec=None,
 
     Parameters:
     ----------
-    modelMap : np.float64 np.ndarray
-        Real 2D map containing the model points.
+    model : np.float64 np.ndarray
+        Real 2D map or 3D array of complex SH coefficients.
     almTensor : list or numpy array, complex64
         Array containing the beam fringe spherical harmonic coefficients. For 
         multi-system this is a list containing the beam fringe sh-coefficient
@@ -413,52 +459,65 @@ def make_resid_map(modelMap,almTensor,mmodeTensor,lMax=130,lMaxVec=None,
     residDirtyMap : np.complex64 np.ndarray
         Output residual dirty map.
     """
-    mapPrep = SHGrid.from_array(np.array(modelMap,dtype=np.complex64))
-    # Set to zero for the next iteration.
-    modelCoeff = mapPrep.expand(normalization='ortho',csphase=-1).coeffs
-    modelCoeff = modelCoeff[0,:,:]
+    if model.ndim == 2:
+        # If the input dimensions is 2 then the input model is an image/map.
+        mapPrep = SHGrid.from_array(np.array(model,dtype=np.complex64))
+        # Set to zero for the next iteration.
+        modelCo = mapPrep.expand(normalization='ortho',csphase=-1).coeffs
+        modelCo = modelCo[0,:,:]
+    elif model.ndim == 3:
+        # If number of dimensions is 3, then the input is the model coefficients.
+        modelCo = model[0,:,:]
 
+    invert = invert_tikh_multi_assym
     if isinstance(almTensor,list):
         # For multi-system CLEAN with different lmax values.
-        #invert = invert_CGLS_multi_pylops_assym
-        invert = invert_tikh_multi_assym
-
+        # The number of baselines per system.
         NbVec = np.array([alm.shape[0] for alm in almTensor]) # Nbaseline vector
-        lVec = np.array([alm.shape[-1] for alm in almTensor]) # lMax vector
 
+        # Getting the lMax vector if one is not provided. 
+        if lMaxVec is None:
+            lMaxVec = np.array([alm.shape[-1] for alm in almTensor])
+            # Setting the maximum lMax to the provided one
+            lMaxVec[lMaxVec > lMax] = lMax
+
+        #
         NbSum = 0 # Running number of baselines sum.
         modelMmodeTensor = np.zeros([np.sum(NbVec),int(lMax+1)],
                                     dtype=np.complex64)
         
         for i,alm in enumerate(almTensor):
+            lMaxTmp = lMaxVec[i]
             # Getting the temp mmode tensor for system i
-            tmpMmodeTensor = np.conj(np.einsum("blm,lm->bm",alm,
-                                               modelCoeff[:lVec[i],:lVec[i]],
+            tmpMmodeTensor = np.conj(np.einsum("blm,lm->bm",
+                                               alm[:,:lMaxTmp+1,:lMaxTmp+1],
+                                               modelCo[:lMaxTmp+1,:lMaxTmp+1],
                                                optimize='optimal'))
             # Assigning the mmode values to the appropriate baseline indices.
-            modelMmodeTensor[NbSum:NbSum+NbVec[i],:lVec[i]] = tmpMmodeTensor
+            modelMmodeTensor[NbSum:NbSum+NbVec[i],:lMaxTmp+1] = tmpMmodeTensor
             # Increasing the running total baseline sum.
             NbSum += NbVec[i]
 
     elif isinstance(almTensor,np.ndarray):
         # For single system.
-        invert = invert_tikh_multi_assym
-
         # Forward modelling the mmode tensor.
-        modelMmodeTensor  = np.conj(np.einsum("blm,lm->bm",almTensor,modelCoeff,
-                                    optimize='optimal'))
+        modelMmodeTensor  = np.conj(np.einsum("blm,lm->bm",
+                                              almTensor[:,:lMax+1,:lMax+1],
+                                              modelCo[:,:lMax+1],
+                                              optimize='optimal'))
 
     # Calculating the residual mmode tensor.
-    if len(mmodeTensor.shape) == 3:
+    if mmodeTensor.ndim == 3:
         # Only need positive m-modes.
-        residMmodeTensor = mmodeTensor[:,0,:] - modelMmodeTensor
-    elif len(mmodeTensor.shape) == 2:
+        residMmodeTensor = mmodeTensor[:,0,:lMax+1] - modelMmodeTensor
+    elif mmodeTensor.ndim == 2:
         # Only need positive m-modes.
-        residMmodeTensor = mmodeTensor - modelMmodeTensor
+        residMmodeTensor = mmodeTensor[:,:lMax+1] - modelMmodeTensor
 
     # Solving for the sky modes.
     skyModes = invert(almTensor,np.conj(residMmodeTensor),lmax=lMax,
-                      lMaxVec=lMaxVec,verbosity=verbosity,damp=damp)
+                      weights=weights,mMax=mMax,lMaxVec=lMaxVec,
+                      verbosity=verbosity,damp=damp)
 
     sphericalCoeffs = SHCoeffs.from_array(skyModes,normalization='ortho',
                                           csphase=-1)
@@ -467,12 +526,18 @@ def make_resid_map(modelMap,almTensor,mmodeTensor,lMax=130,lMaxVec=None,
     residDirtyMap = griddedCoeffs.data.real
 
     if plotCond:
-        plot_dirty_image(modelMap,linear_width=linear_width,
-                        norm='asinh',title='Model Image')
+        if model.ndim == 2:
+            plot_dirty_image(model,linear_width=linear_width,
+                            norm='asinh',title='Model Image')
         plot_dirty_image(residDirtyMap.real,norm='asinh',vmax=vmax,vmin=vmin,
                         linear_width=linear_width,title='Residual Dirty Image')
 
-    return residDirtyMap
+    if returnCoeffs:
+        # Returned coefficients are useful for testing cases.
+        return residDirtyMap,skyModes
+    else:
+        return residDirtyMap
+    
 
 def minor_iteration(dirtyMap,dirtyPeakMap,modelMap,psfWeightsTensor,coords,
                     psfCoeffCube,stdMap,bkgMap,loopGain=0.1,sigThresh=2,
@@ -826,8 +891,8 @@ def make_mask_box(maskParams,RAgrid,DECgrid):
     return maskList
 
 
-def calc_clean_mask(skyCo,initalMask=None,DECthresh=(41,-80),maskList=None,
-                    GPthresh=0,GPthreshFlip=False,plotCond=False):
+def calc_clean_mask(skyCo,initalMask=None,DECthresh=(90,-90),maskList=None,
+                    GPthresh=0,GPthreshFlip=False,plotCond=False,maskFlip=False):
     """
     Function calculates a clean mask from input threshold parameters.
 
@@ -850,6 +915,8 @@ def calc_clean_mask(skyCo,initalMask=None,DECthresh=(41,-80),maskList=None,
     plotCond : bool, default=False
         If True plot the mask. Use this when you want to ensure that outputs 
         makse sense.
+    maskFlip : bool, default=False
+        If True flip the False and True values in the mask.
 
     Returns:
     ----------
@@ -912,6 +979,9 @@ def calc_clean_mask(skyCo,initalMask=None,DECthresh=(41,-80),maskList=None,
     for ind,maskGrid in enumerate(cleanMaskList):
         if ind > 0:
             cleanMask *= maskGrid
+
+    if maskFlip:
+        cleanMask = cleanMask == False
 
     # If True plot the clean mask for visual inspection.
     if plotCond:
