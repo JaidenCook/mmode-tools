@@ -463,7 +463,7 @@ def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
     mmodeTensor[np.isinf(mmodeTensor)] = 0
 
     # Shape of the mmode tensor, we only need to solve for the positive m-modes.
-    if len(mmodeTensor.shape) > 2:
+    if mmodeTensor.ndim == 3:
         mmodeTensor = mmodeTensor[:,0,:]
 
     # Initialising the output sky coefficients.
@@ -514,14 +514,6 @@ def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
         v = mmodeTensor[:,m]
         # Creating the regularization matrix.
         R = calc_reg_matrix(regParam,m,lmax)
-
-        if np.any(weights):
-            if weights.size != Bm.shape[0]:
-                raise ValueError(f'Weights shape {weights.size} should match B' +\
-                                f' axis 0 size {Bm.shape[0]}')
-            else:
-                Bm = Bm*weights[:,None]
-                v = v*weights
 
         Lam = np.array(np.matrix(Bm).H) @ Bm + R
         Lam_inv = np.linalg.inv(Lam)
