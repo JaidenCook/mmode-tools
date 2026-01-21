@@ -6,20 +6,23 @@ from mmode_tools.inversion import restore_negmodes
 from scipy.ndimage import generic_filter
 from warnings import warn
 from mmode_tools.plots import coefficient_plot
+from mmode_tools.io import fits2skyCoeffs
 
 
 class SkyMap:
     """ _summary_
     """
-    def __init__(self,coeffs=None,skyMap=None,lMax=None,
+    def __init__(self,filePath=None,coeffs=None,skyMap=None,lMax=None,
                  dirty=False,weights=None,
-                 model=False):
+                 model=False,unit='Jy'):
         """__init__ 
-        ## TODO: Add ability to read in coefficients from a FITS file, and to 
         read in HEALPIX style coefficients.
         
         Parameters
         ----------
+        filePath : str, optional
+            If given this is a FITS file that has been created with the map2fits
+            function in mmode_toosl.io.
         coeffs : np.complex64, optional
             Numpy array of sky coefficients, should either be 2 dimensional
             or 3 dimensional. If only 2, this indicates only the positive
@@ -59,7 +62,12 @@ class SkyMap:
         self.decVec = None
         self.dirty = dirty
         self.model = model # Is the map a model map if yes True, else False.
+        self.unit = unit
         #
+        if filePath is not None:
+            coeffs,weights=fits2skyCoeffs(filePath,readRegParams=True)
+
+
         if coeffs is not None:
             if coeffs.ndim == 1:
                 raise ValueError("Coefficient array should have dimension = 3.")
@@ -187,6 +195,51 @@ class SkyMap:
         
         return lMax
 
+    def convert2Jy(self,freq=150e6):
+        """convert2Jy Converts from units of temperature Sr to units of 
+        Jy. This operates in the coefficient domain not the map domain.
+
+        Parameters
+        ----------
+        freq : float, optional
+            Frequency of the coefficients, by default 150e6 Hz.
+
+        Raises
+        ------
+        ValueError
+            _description_
+        """
+        from mmode_tools.constants import kb,c
+        if self.unit != 'K':
+            raise ValueError(f"unit value should be in Kelvin not {self.unit}.")
+        
+        Temp2Jy = 2*kb/(c/freq)**2
+
+        self.coeffs = self.coeffs*Temp2Jy
+        self.unit = 'Jy'
+
+        if self.skyMap is not None:
+            self.expand_coeffs()
+    
+    def freq_scale_ceoffs(self,freqOld,freqNew,alpha=-2.55):
+        """freq_scale_ceoffs scale the coefficients to a new frequency. Assumes
+        that the map scaling is a power law, with a spectral index of -2.55.
+
+        Parameters
+        ----------
+        freqOld : float
+            Old frequency.
+        freqNew : float
+            New frequency
+        alpha : float, optional
+            Spectral index for power law scaling, by default -2.55.
+        """
+
+        scale = (freqNew/freqOld)**alpha
+        self.coeffs = self.coeffs*scale
+        if self.skyMap is not None:
+            self.expand_coeffs()
+
     #   
     def expand_coeffs(self,lMax=None,galactic=False):
         """expand_coeffs creates the cartesian map from the spherical harmonic
@@ -226,6 +279,29 @@ class SkyMap:
             self.raVec = np.roll(self.raVec,int(self.raVec.size/2))
             self.skyMap = coeffsObj.expand(grid='DH2',backend='ducc',
                                            lmax=lMax).data.real
+
+    def calc_map_mean(self):
+        """calc_map_mean calculates the mean sky value, either in Jy/Sr or in 
+        Kelvin.
+        """
+        _,coLatGrid = np.meshgrid(self.colon,self.colat)
+        latGrid = coLatGrid - 90
+
+        #dtheta = np.radians(360/latGrid.shape[1])
+        dOmega = 4*np.pi/latGrid.size
+
+        if self.skyMap is None:
+            self.expand_coeffs()
+        
+        #meanSky = dtheta**2 *np.sum(self.skyMap*np.cos(np.radians(latGrid)))/np.sqrt(4*np.pi)
+        meanSky = dOmega *np.sum(self.skyMap*np.cos(np.radians(latGrid)))#/(4*np.pi)
+
+        if self.unit == 'K':
+            print(f"Mean sky temperature = {meanSky:5.3f} [{self.unit}]")
+        elif self.unit == 'Jy':
+            print(f"Mean sky intensity = {meanSky:5.3f} [{self.unit}/Sr]")
+
+
 
     def calc_mask(self,initalMask=None,DECthresh=(90,-90),maskList=None,
                   GPthresh=0,GPthreshFlip=False,plotCond=False,maskFlip=False):
