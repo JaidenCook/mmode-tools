@@ -219,13 +219,12 @@ def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
             cb.add_lines(levels=levels,colors=colorList,
                         linewidths=[2,2,2,2,2])
 
-    #axs.set_xlabel(r'Spherical harmonic order $m$',fontsize=fontsize)
-    #axs.set_ylabel(r'Spherical harmonic degree $\ell$',fontsize=fontsize)
     axs.set_xlabel(r'$m$',fontsize=fontsize)
     axs.set_ylabel(r'$\ell$',fontsize=fontsize)
     axs.set_xticklabels(axs.get_xticks().astype(int),fontsize=fontsize-2)
     axs.set_yticklabels(axs.get_yticks().astype(int),fontsize=fontsize-2)
 
+    [x.set_linewidth(2.) for x in axs.spines.values()]
     if returnIm:
         return im
 
@@ -292,4 +291,6 @@ def plot_equatorial_map(skyMap,lon=None,lat=None,figsize=(16,10),norm='linear',
 
     if grid:
         axs.grid(ls='-.',alpha=0.25,color='k')
+    
+    [x.set_linewidth(2.) for x in axs.spines.values()]
     #plt.show()
