@@ -332,9 +332,28 @@ def analytic_length_func(lam,L=1):
 
     return term
 
-def analytic_dipole_beam(freq,latRad,L=1,sampling='DH1',lMax=130):
-    """
-    Physical dipole model.
+def analytic_dipole_beam(freq,latRad,L=1,sampling='DH1',lMax=130,
+                         directivity=False):
+    """analytic_dipole_beam generates the directivity of a physical dipole for
+    some latitude, mapping this onto the Driscal and Healy sampling grid DH1.
+
+    Parameters
+    ----------
+    freq : float
+        Frequency of the beam.
+    latRad : float
+        Latitude of the observation.
+    L : float, optional
+        Length of the physical antenna in metres, by default 1
+    sampling : str, optional
+        Sampling methid, only supports DH1 and DH2, by default 'DH1'
+    lMax : int, optional
+        Maximum SH ell degree, by default 130
+
+    Returns
+    -------
+    beamTerm : float
+        The output beam model in DH1 sampling.
     """
     lam = c/freq
     k = 2*np.pi/lam
@@ -356,10 +375,15 @@ def analytic_dipole_beam(freq,latRad,L=1,sampling='DH1',lMax=130):
     cosTerm = np.cos(elGrid)
     sinTerm = np.sin(elGrid)
 
-    beamTerm = ((np.cos(0.5*k*L*cosTerm) - \
-                        np.cos(0.5*k*L)) /sinTerm)**2
+    beamTerm = ((np.cos(0.5*k*L*cosTerm) - np.cos(0.5*k*L)) /sinTerm)**2 
     #beamTerm = np.sin(elGrid)**2
     beamTerm[elGrid<=0] = 0
+
+    if directivity:
+        beamTerm = beamTerm*2/f
+    else:
+        # Normalise so the peak is unity.
+        beamTerm = beamTerm/beamTerm.max()
 
     return beamTerm
 
