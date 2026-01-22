@@ -484,7 +484,7 @@ class SkyMap:
         sphericalCoeffs = SHCoeffs.from_array(self.coeffs,normalization='ortho',
                                               csphase=-1)
         self.coeffsGalactic = sphericalCoeffs.rotate(alpha,beta,gamma,
-                                                     degrees=True)
+                                                     degrees=True).coeffs
 
 
     def plot_coefficients(self,lMax=None,figaxs=None,cmap='viridis',
