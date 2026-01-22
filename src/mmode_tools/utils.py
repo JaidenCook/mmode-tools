@@ -434,7 +434,10 @@ def data2map(mmodeTensor,almTensorList,weights,invert=invert_tikh_multi_assym,
                 print("Applying weights to the data and transfer matrices.")
             weights = np.asarray(weights,dtype=np.complex64)
 
-            mmodeTensor *= weights[:,None,None]
+            if mmodeTensor.ndim == 3:
+                mmodeTensor *= weights[:,None,None]
+            elif mmodeTensor.ndim == 2:
+                mmodeTensor *= weights[:,None]
             NbVec = np.array([alm.shape[0] for alm in almTensorList])
             NbSum = 0
             for ind,alm in enumerate(almTensorList):
