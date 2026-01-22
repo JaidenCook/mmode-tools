@@ -136,7 +136,7 @@ class SkyMap:
                 coeffsNew = self.coeffs[:,:lMax+1,:lMax+1] - other.coeffs[:,:lMax+1,:lMax+1]
             else:
                 coeffsNew = self.coeffs - other.coeffs
-            return SkyMap(coeffsNew,dirty=self.dirty,model=self.model)
+            return SkyMap(coeffs=coeffsNew,dirty=self.dirty,model=self.model)
         else:
             raise TypeError("Object should both be SkyMap.")
     
@@ -162,7 +162,7 @@ class SkyMap:
                 coeffsNew = self.coeffs[:,:lMax+1,:lMax+1] + other.coeffs[:,:lMax+1,:lMax+1]
             else:
                 coeffsNew = self.coeffs + other.coeffs
-            return SkyMap(coeffsNew,dirty=self.dirty,model=self.model)
+            return SkyMap(coeffs=coeffsNew,dirty=self.dirty,model=self.model)
         else:
             raise TypeError("Object should both be SkyMap.")
 
@@ -815,9 +815,52 @@ def convolve_model_map(model,weightsTensor,expandMap=True,lMax=None):
     almConv = restore_negmodes(almConv[:lMax+1,:lMax+1])
 
     # Create output dirty model SkyMap object.
-    dirtyModel = SkyMap(almConv,weights=weights,dirty=True)
+    dirtyModel = SkyMap(coeffs=almConv,weights=weights,dirty=True)
     if expandMap:
         dirtyModel.expand_coeffs()
 
     return dirtyModel
 
+def haslam2pyshtools(filePath,freq=408e6,lmax=570):
+    """haslam2pyshtools _summary_
+
+    Parameters
+    ----------
+    filePath : _type_
+        _description_
+    freq : _type_, optional
+        _description_, by default 408e6
+    lmax : int, optional
+        _description_, by default 570
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    import healpy as hp
+    from mmode_tools.inversion import restore_negmodes
+
+    scale = (freq/408e6)**(-2.55)
+    hp_map = hp.read_map(filePath)*scale
+    
+    alm_hp = hp.map2alm(hp_map,lmax=lmax)
+    alm_pyshtools = np.zeros((lmax+1,lmax+1),dtype=complex)
+
+    # Need to first rotate to Celestial coordinates then flip by 180 degrees.
+    rot = hp.rotator.Rotator(rot=[0,180],coord=['G','C'])
+    alm_hp = rot.rotate_alm(alm_hp,lmax=lmax)
+    rot = hp.rotator.Rotator(rot=[180,0])
+    alm_hp = rot.rotate_alm(alm_hp,lmax=lmax)
+
+    # Looping through each l and m, and assigning to the pyshtools alm array.
+    # We only need to do this for the positive m modes.
+    for l in range(lmax+1):
+        for m in range(l+1):
+            alm_pyshtools[l,m] = alm_hp[hp.Alm.getidx(lmax=lmax,l=l,m=m)]
+    
+    # Restoring the negative m modes. And performing a parity operation.
+    # The parity flip from -m to +m is equivalent to rolling the m-axes.
+    rescale = np.sqrt(2) # This is required to match the scales for the PyGSM.
+    alm_pyshtools = np.roll(restore_negmodes(alm_pyshtools),1,axis=0)*rescale
+    return alm_pyshtools
