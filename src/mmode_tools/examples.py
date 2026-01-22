@@ -63,34 +63,48 @@ def load_default_beam_model(LAT=0,pol='I',lMax=541,freq=150e6,
     
     return beamMap
 
-def load_model_map(freq=150e6):
+def load_model_map(freq=150e6,lMax=130,desourced=False,unit='K'):
     """
     Function to load in the test model map.
 
     Parameters
     ----------
-    freq : float
+    freq : float, optional
         Frequency in Hz.
+    lMax : int, optional
+        Max spherical harmonic degress, default is 130.
+    desourced : bool, optional
+        If True use the desourced Haslam map as the input model.
+    unit : str, optional
+        Default is 'K', other option is 'Jy', if 'Jy' converts from temperature
+        to Jy. Raises ValueError otherwise.
 
     Returns
     -------
-    haslamMap : numpy array
+    haslam : mmode_tools.skymap.SkyMap
         The scaled Haslam map at the requested frequency.
     """
     
     from astropy.io import fits
+    from mmode_tools.skymap import haslam2pyshtools,SkyMap
 
-    haslamPath = dataPath.joinpath('radio408MHz_fixheader.fits')
+    if desourced:
+        haslamPath = dataPath.joinpath("haslam408_dsds_Remazeilles2014.fits")
+    else:
+        haslamPath = dataPath.joinpath("haslam408_ds_Remazeilles2014.fits")
+    # Getting the Haslam map sky coefficients.
+    coeffsHaslam = haslam2pyshtools(haslamPath,freq=freq,lmax=lMax)
+    # Creating the Haslam SkyMap object.
+    haslam = SkyMap(coeffs=coeffsHaslam,unit='K',dirty=False,model=True)
+    
+    # Checking the input units, converting if Jy.
+    if unit == 'Jy':
+        # Convert to Jy.
+        haslam.convert2Jy()
+    elif (unit != 'K') and (unit != 'Jy'):
+        raise ValueError(f"Unit value should be K or Jy, not {unit}.")
 
-    # Frequency scaling.
-    scale = (freq/408e6)**(-2.55)
-    with fits.open(haslamPath) as hdu:
-        if len(hdu[0].data.shape) == 2:
-            haslamMap = hdu[0].data[:,:]*scale
-        elif len(hdu[0].data.shape) == 3:
-            haslamMap = hdu[0].data[:,:][0,:,:]*scale
-        
-    return haslamMap
+    return haslam
 
 
 def load_example_interferometer():
