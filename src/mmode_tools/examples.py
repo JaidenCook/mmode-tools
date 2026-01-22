@@ -145,7 +145,7 @@ def make_point_covtensor(freq=150e6,raSrc=0,decSrc=0,srcFlux=1.0,lMax=130):
 
     # Output filepath for the covariance tensor.
     fileName = f"point_source_covtensor_{telescopeName}_150MHz.h5"
-    outFilePath = covTensorPath + fileName
+    outFilePath = covTensorPath / fileName
 
     # Checking that the example dataset does not already exist.
     if not os.path.exists(outFilePath):
@@ -195,8 +195,8 @@ def make_point_covtensor(freq=150e6,raSrc=0,decSrc=0,srcFlux=1.0,lMax=130):
         interferometers = {interferometer.telescope : interferometer,
                         interferometer.telescope : interferometer,}
         telescopes = [interferometer.telescope,interferometer.telescope]
-        beamFringeFilePaths = [beamFringePath + "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5",
-                            beamFringePath + "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5"]
+        beamFringeFilePaths = [beamFringePath / "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5",
+                            beamFringePath / "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5"]
 
         configOutPath = covTensorPath
         configFileName = f"point_source_covtensor_{telescopeName}_150MHz_config.toml"
@@ -234,7 +234,7 @@ def make_haslam_covtensor(freq=150e6,lMax=130):
 
     # Output filepath for the covariance tensor.
     fileName = f"haslam_covtensor_{telescopeName}_150MHz.h5"
-    outFilePath = covTensorPath + fileName
+    outFilePath = covTensorPath / fileName
 
     if not os.path.exists(outFilePath):
 
@@ -254,11 +254,8 @@ def make_haslam_covtensor(freq=150e6,lMax=130):
         lstVec = t.sidereal_time('mean').hour
         tgpsVec = t.gps
 
-        haslamMap = load_model_map(freq)
-        mapGrid = SHGrid.from_array(np.array(haslamMap,dtype=np.complex64))
-        # Set to zero for the next iteration.
-        almArr = mapGrid.expand(normalization='ortho',csphase=-1,
-                                lmax_calc=lMax).coeffs
+        haslam = load_model_map(freq,lMax=lMax)
+        almArr = haslam.coeffs
 
         
         # Constructing the full covariance tensor.
@@ -320,8 +317,8 @@ def make_haslam_covtensor(freq=150e6,lMax=130):
                         interferometer.telescope : interferometer,}
         telescopes = [interferometer.telescope,interferometer.telescope]
         #dates = ["",""]
-        beamFringeFilePaths = [beamFringePath + "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5",
-                            beamFringePath + "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5"]
+        beamFringeFilePaths = [beamFringePath / "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5",
+                            beamFringePath / "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5"]
 
         configOutPath = covTensorPath
         configFileName = f"haslam_covtensor_{telescopeName}_150MHz_config.toml"
