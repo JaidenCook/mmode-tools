@@ -648,10 +648,10 @@ def make_radio_array(filePath=None,eastNorthHeight=None,lat=None,lon=None,
     return outClass()
 
 
-mwaFilepath = interferometerPath + 'antenna_locations_mwa_Feb_24.txt'
-eda2Filepath = interferometerPath + 'antenna_locations_eda2.txt'
-mwaextFilepath = interferometerPath + 'antenna_locations_mwaPHII_extnd.txt'
-onsalaFilepath = interferometerPath + 'antenna_locations_SE607HBA_SEPTON.txt'
+mwaFilepath = interferometerPath / 'antenna_locations_mwa_Feb_24.txt'
+eda2Filepath = interferometerPath / 'antenna_locations_eda2.txt'
+mwaextFilepath = interferometerPath / 'antenna_locations_mwaPHII_extnd.txt'
+onsalaFilepath = interferometerPath / 'antenna_locations_SE607HBA_SEPTON.txt'
 
 # Making child classes for a couple of regularly used arrays.
 # These are what is exported.
