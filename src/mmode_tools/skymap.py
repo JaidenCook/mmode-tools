@@ -51,9 +51,13 @@ class SkyMap:
         # Initialising all the possible attributes.
         self.skyMap = None
         self.bkgMap = None
+        self.stdMap = None
+        self.threshMap = None
+        self.cleanMask = None
+        self.spectrum = None
+        self.mapMean = None
         self.windowSizeDeg = None
         self.windowSizePix = None
-        self.stdMap = None
         self.coeffsGalactic = None
         self.skyMapGalactic = None
         self.colat = None
@@ -280,6 +284,28 @@ class SkyMap:
             self.skyMap = coeffsObj.expand(grid='DH2',backend='ducc',
                                            lmax=lMax).data.real
 
+
+    def calc_power_spectrum(self,lMax=None,unit='per_l'):
+        """calc_power_spectrum _summary_
+
+        Parameters
+        ----------
+        lMax : _type_, optional
+            _description_, by default None
+        unit : str, optional
+            To average per l or per lm, by default 'per_l', can also be 'per_lm'.
+        """
+        
+        # Performing check on new lMax input.            
+        lMax = self.lmax_check(lMax=lMax)
+
+        spectrum = SHCoeffs.from_array(self.coeffs,normalization='ortho',
+                                        csphase=-1).spectrum(lmax=lMax,
+                                                             unit=unit)
+        
+        self.spectrum = spectrum
+        
+
     def calc_map_mean(self):
         """calc_map_mean calculates the mean sky value, either in Jy/Sr or in 
         Kelvin.
@@ -293,14 +319,14 @@ class SkyMap:
         if self.skyMap is None:
             self.expand_coeffs()
         
-        #meanSky = dtheta**2 *np.sum(self.skyMap*np.cos(np.radians(latGrid)))/np.sqrt(4*np.pi)
-        meanSky = dOmega *np.sum(self.skyMap*np.cos(np.radians(latGrid)))#/(4*np.pi)
+        meanSky = dOmega *np.sum(self.skyMap*np.cos(np.radians(latGrid)))
+
+        self.mapMean = meanSky
 
         if self.unit == 'K':
             print(f"Mean sky temperature = {meanSky:5.3f} [{self.unit}]")
         elif self.unit == 'Jy':
             print(f"Mean sky intensity = {meanSky:5.3f} [{self.unit}/Sr]")
-
 
 
     def calc_mask(self,initalMask=None,DECthresh=(90,-90),maskList=None,
@@ -368,11 +394,11 @@ class SkyMap:
 
         # If initial mask is provided we can add this to the mask list.
         if initalMask is not None:
-            if initalMask.shape == RAgrid.shape:
+            if initalMask.shape != RAgrid.shape:
                 # Check that the shape of the initial mask is the same as the
                 # grid.
-                errMsg = f"initalMask.shape {initalMask.shape} != RAgrid.shape +"
-                f" {RAgrid.shape}"
+                errMsg = f"initalMask.shape {initalMask.shape} " + \
+                         f"!= RAgrid.shape {RAgrid.shape}."
                 raise ValueError(errMsg)
             else:
                 cleanMaskList.append(initalMask)
@@ -463,10 +489,67 @@ class SkyMap:
             self.calc_background_map(windowSizeDeg=windowSizeDeg,lMax=lMax)
         
         
-        self.stdMap = calFactor = 1.4826
+        calFactor = 1.4826
         diffMap = self.skyMap - self.bkgMap
         self.stdMap =  calFactor*generic_filter(np.abs(diffMap),np.median,
                                                 size=self.windowSizePix)
+
+    def calc_thresh_map(self,windowSizeDeg=6,lMax=None):
+        """calc_thresh_map _summary_
+
+        Parameters
+        ----------
+        windowSizeDeg : int, optional
+            _description_, by default 6
+        lMax : _type_, optional
+            _description_, by default None
+        """
+
+        # Performing check on new lMax input.            
+        lMax = self.lmax_check(lMax=lMax)
+        
+        if self.stdMap is None:
+            # We need the background map to estime the std, if None, then we
+            # calculate it.
+            self.calc_std_map(windowSizeDeg=windowSizeDeg,lMax=lMax)
+        
+        # Expand the sky again, coefficients could have changed.
+        self.expand_coeffs()
+        self.threshMap = (self.skyMap - self.bkgMap)/self.stdMap
+    
+    def find_peaks(self,thresh=4,windowSizeDeg=6,**kwargs):
+        """find_peaks Find peaks in the threshold map.
+
+        Parameters
+        ----------
+        thresh : int, optional
+            _description_, by default 4
+
+        Returns
+        -------
+        _type_
+            _description_
+        """
+        from skimage.feature import peak_local_max
+
+        if self.threshMap is None:
+            self.calc_thresh_map(windowSizeDeg=windowSizeDeg)
+            threshMap = np.copy(self.threshMap)
+
+        if self.cleanMask is not None:
+
+            threshMap = np.copy(self.threshMap)
+            threshMap[self.cleanMask == False] = 0
+
+         # Performing the peak detection on the masked threshold map.
+        coords = peak_local_max(threshMap,threshold_abs=thresh,**kwargs)
+        #coords = peak_local_max(threshMap,threshold_abs=thresh,min_distance=10,
+        #                        num_peaks=100)
+        threshVec = threshMap[coords[:,0],coords[:,1]]
+        coords = coords[threshVec>=thresh,:]
+
+        return coords
+
 
     #
     def celestial2Galactic(self):
@@ -489,9 +572,10 @@ class SkyMap:
 
     def plot_coefficients(self,lMax=None,figaxs=None,cmap='viridis',
                           norm='log',vmin=None,vmax=None,linear_width=10,
-                          plotreal=False,plotimag=False,clab=None,title=None,
-                          fullPlot=True,add_contours=False,colorBar=True,
-                          fontsize=14,**kwargs):
+                          plotreal=False,plotimag=False,plotWeights=False,
+                          clab=None,title=None,fullPlot=True,
+                          add_contours=False,colorBar=True,fontsize=14,
+                          **kwargs):
         """plot_coefficients _summary_
 
         Parameters
@@ -528,13 +612,52 @@ class SkyMap:
             _description_, by default 14
         """
 
-        coefficient_plot(self.coeffs,interpolation="None",lmax=lMax,
+        if plotWeights:
+            coeffs = self.weights
+        else:
+            coeffs = self.coeffs
+
+        coefficient_plot(coeffs,interpolation="None",lmax=lMax,
                          figaxs=figaxs,cmap=cmap,norm=norm,vmin=vmin,vmax=vmax,
                          linear_width=linear_width,plotreal=plotreal,
                          plotimag=plotimag,clab=clab,title=title,
                          fullPlot=fullPlot,add_contours=add_contours,
                          colorBar=colorBar,returnIm=False,fontsize=fontsize,
                          **kwargs)
+
+    def plot_spectrum(self,lMax=None,unit='per_l',figaxs=None,fontsize=14,
+                      **kwargs):
+        """plot_spectrum _summary_
+
+        Parameters
+        ----------
+        lMax : _type_, optional
+            _description_, by default None
+        unit : str, optional
+            _description_, by default 'per_l'
+        figaxs : _type_, optional
+            _description_, by default None
+        fontsize : int, optional
+            _description_, by default 14
+        """
+
+        if self.spectrum is None:
+            self.calc_power_spectrum(lMax=lMax,unit=unit)
+        
+        if figaxs is None:
+            fig,axs = plt.subplots(1,figsize=(8,4))
+        else:
+            fig,axs = figaxs
+        
+        #
+        axs.plot(self.spectrum,**kwargs)
+        axs.set_xlabel(r'$\ell$',fontsize=fontsize+2)
+        axs.set_ylabel(rf'Power $[\mathrm{{{self.unit}}}^2]$',
+                       fontsize=fontsize+2)
+        #axs.set_xticklabels(axs.get_xticks().astype(int),fontsize=fontsize)
+        #axs.set_yticklabels(axs.get_yticks().astype(int),fontsize=fontsize)
+        [x.set_linewidth(2.) for x in axs.spines.values()]
+
 
 
     # TODO make these functions wrappers for functions in plots. 
@@ -782,21 +905,23 @@ def convolve_model_map(model,weightsTensor,expandMap=True,lMax=None):
         if not(model.dirty):
             # Assume that the model is not already convolved with PSF.
             almModel = model.coeffs[0,:,:]
-            almConv = np.zeros_like(almModel)
             weights = model.weights
     elif isinstance(model,np.ndarray):
         if model.ndim == 2:
             mapPrep = SHGrid.from_array(np.array(model,dtype=np.complex64))
             # Set to zero for the next iteration.
             almModel = mapPrep.expand(normalization='ortho',csphase=-1).coeffs
+            almModel = almModel[0,:,:]
             weights = None
         elif model.ndim == 3:
             # If 3 dimensions assume model is the coefficients.
-            almModel = model
+            almModel = model[0,:,:]
             weights = None
         else:
             err = f"model dimension should be 2 or 3 not {model.ndim}."
             raise ValueError(err)
+    
+    almConv = np.zeros_like(almModel)
 
     if lMax is None:
         lMax = almModel.shape[-1] - 1
