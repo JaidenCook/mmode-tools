@@ -329,13 +329,13 @@ class SkyMap:
             print(f"Mean sky intensity = {meanSky:5.3f} [{self.unit}/Sr]")
 
 
-    def calc_mask(self,initalMask=None,DECthresh=(90,-90),maskList=None,
+    def calc_mask(self,initialMask=None,DECthresh=(90,-90),maskList=None,
                   GPthresh=0,GPthreshFlip=False,plotCond=False,maskFlip=False):
         """calc_mask _summary_
 
         Parameters
         ----------
-        initalMask : _type_, optional
+        iniitalMask : _type_, optional
             _description_, by default None
         DECthresh : tuple, optional
             _description_, by default (90,-90)
@@ -393,15 +393,15 @@ class SkyMap:
             cleanMaskList.append(GPmask)
 
         # If initial mask is provided we can add this to the mask list.
-        if initalMask is not None:
-            if initalMask.shape != RAgrid.shape:
+        if initialMask is not None:
+            if initialMask.shape != RAgrid.shape:
                 # Check that the shape of the initial mask is the same as the
                 # grid.
-                errMsg = f"initalMask.shape {initalMask.shape} " + \
+                errMsg = f"initalMask.shape {initialMask.shape} " + \
                          f"!= RAgrid.shape {RAgrid.shape}."
                 raise ValueError(errMsg)
             else:
-                cleanMaskList.append(initalMask)
+                cleanMaskList.append(initialMask)
 
         # Making the final clean mask by multiplying all masks together.
         cleanMask = np.copy(cleanMaskList[0])
