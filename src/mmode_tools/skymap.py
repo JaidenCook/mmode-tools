@@ -989,3 +989,42 @@ def haslam2pyshtools(filePath,freq=408e6,lmax=570):
     rescale = np.sqrt(2) # This is required to match the scales for the PyGSM.
     alm_pyshtools = np.roll(restore_negmodes(alm_pyshtools),1,axis=0)*rescale
     return alm_pyshtools
+
+def calc_analytic_ps(colat0,colon0,amplitude,lMax=650):
+    """calc_analytic_ps Calculates the analytic spherical harmonic coefficients 
+    for a point source located at (lat0,lon0) with amplitude amp. Accurate up to 
+    l_max = 2800. 
+
+    Parameters
+    ----------
+    colat0 : float
+        Colatitude of point source in degrees. From 0-180 degrees.
+    colon0 : float
+        Longitude of point source in degrees.
+    amplitude : float
+        amplitude of point source in degrees, assumed to be Jy/Sr.
+    lMax : int, optional
+        Maximum degree of spherical harmonics, by default 650.
+
+    Returns
+    -------
+    almPs : _type_
+        Analytic point source spherical harmonic coefficients.
+    """
+    from pyshtools.expand import spharm
+
+    if isinstance(amplitude,np.ndarray):
+        almPs = 0 + 1j*0
+        for i,amp in enumerate(amplitude):
+            almPs += calc_analytic_ps(colat0[i],colon0[i],amplitude[i],
+                                      lMax=lMax)
+            almPs = np.conj(almPs)*amp*np.cos(np.radians(colat0[i]-90))
+    elif isinstance(amplitude,float):
+        almPs = spharm(lMax,colat0,colon0,kind='complex',csphase=-1,
+                       normalization='ortho')
+        almPs = np.conj(almPs)*amplitude*np.cos(np.radians(colat0-90))
+    
+    # 
+    almPs = almPs.astype(np.complex64)
+
+    return almPs
