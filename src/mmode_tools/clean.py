@@ -4,13 +4,13 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from pyshtools import SHGrid,SHCoeffs
 from mmode_tools.inversion import invert_tikh_multi_assym
-from mmode_tools.inversion import invert_CGLS_multi_pylops_assym
 from mmode_tools.inversion import calc_reg_matrix,restore_negmodes
 from mmode_tools.functions import Gaussian2Dxy
 from scipy.optimize import curve_fit
 from scipy.linalg import cho_factor
 from scipy.ndimage import generic_filter
 from warnings import warn
+from mmode_tools.skymap import SkyMap,calc_analytic_ps,convolve_model_map
 
 
 def fit_restoring_beam(xdata_tuple,data,coord):
@@ -539,231 +539,242 @@ def make_resid_map(model,almTensor,mmodeTensor,weights=None,lMax=130,lMaxVec=Non
         return residDirtyMap
     
 
-def minor_iteration(dirtyMap,dirtyPeakMap,modelMap,psfWeightsTensor,coords,
-                    psfCoeffCube,stdMap,bkgMap,loopGain=0.1,sigThresh=2,
-                    verbosity=1,plotCond=False):
-    """
-    Performs the minor iteration.
 
-    Parameters:
-    ----------
-    dirtyMap : np.float64 np.ndarray
-        Dirty map, as input 2D numpy array.
-    dirtyPeakMap : np.float64 np.ndarray
-        Background subtracted dirty map, as input 2D numpy array.
-    modelMap : np.float64 np.ndarray
-        Real 2D map containing the model points.
-    coords : np.float64 np.ndarray
-        2D numpy array containing peak xy-coordinates.
-    psfCube : np.float64 np.ndarray
-        3D numpy array, each slice has the same dimensions as the dirty map,
-        contains all the PSF maps for each declination.
-    stdMap : np.float64 np.ndarray
-        Standard deviation map of the dirty image.
-    poptArr : np.float64 np.ndarray
-        2D array containing the fitted PSF Gaussian parameters. Needed to make
-        the final resotred map.
-    bkgMap : np.float64 np.ndarray
-        Smoothed background map of the dirty image.
-    xygrid : tuple,np.float64 np.ndarray
-        Tuple containing the 2D xy-grid numpy arrays.
-    almTensor : list or numpy array, complex64
-        Array containing the beam fringe spherical harmonic coefficients. For 
-        multi-system this is a list containing the beam fringe sh-coefficient
-        tensors for each system.
-    loopGain : float, default=0.1
-        Fraction of peak to subtraction from CLEAN component.
-    lMax : int, default=130
-        Max l-mode.
-    sigThresh : float, default=2
-        Significance threshold as a sigma multiple to CLEAN down towards. Lower
-        means deaper clean.
-    verbosity : int, default=1
-        CGLS output order, goes from 1-10, 1 being less output, 10 being more.
 
-    Returns:
-    ----------
-    """
-    peaks = dirtyMap[coords[:,0],coords[:,1]].real
-    peakInd = np.argmax(np.abs(peaks))
-    ycoord,xcoord = coords[peakInd,:]
-    xcent = int(dirtyMap.shape[1]/2)
+def minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
+               loopGain=0.1,thresh=7,windowSizeDeg=6,lMax=None,
+               verbosity=0,peaks_kwargs=None):
+    # Coefficients can change between iterations.
+    #dirtySkyMap.expand_coeffs()
+    dirtySkyMap.calc_thresh_map(windowSizeDeg=windowSizeDeg,lMax=lMax)
 
-    # Making the PSF.
-    if np.sum(psfCoeffCube[ycoord,:,:]) == 0:
-        # Used to model the psf:
-        pointMap = np.zeros(dirtyMap.shape)
-        pointMap[int(ycoord),xcent] = 1
-        psfMap,apsf,_ = calc_psf_map((xcent,ycoord),psfWeightsTensor,
-                                     dirtyMap.shape,returnCoeffs=True)
-
-        # Assign to PSF coefficient cube for later use.
-        psfCoeffCube[ycoord,:,:] = apsf[0,:,:] # Only need the positive m-modes.
+    if peaks_kwargs is not None:
+        peakCoords = dirtySkyMap.find_peaks(thresh=thresh,**peaks_kwargs)
     else:
-        # If the coefficients already exist then we can expand the map.
-        apsf = psfCoeffCube[ycoord,:,:] # psf coefficients.
-        apsf = restore_negmodes(apsf) # Restoring negative modes.
-        psfCoeffs = SHCoeffs.from_array(apsf,normalization='ortho',csphase=-1)
-        psfMap = psfCoeffs.expand(grid='DH2',backend='ducc').data.real # psf map.
+        peakCoords = dirtySkyMap.find_peaks(thresh=thresh)
+    
+    if verbosity > 0:
+        print(f"Number of peaks found = {peakCoords.shape[0]}")
+
+    if not(np.any(peakCoords)):
+        print("No peaks found...")
+        return False
+
+    # Creating a temporary model map.
+    tmpModelMap = np.zeros_like(dirtySkyMap.skyMap)
 
     #
-    if plotCond:
-        plot_dirty_image(psfMap,norm='linear',title='PSF')
+    if dirtySkyMap.stdMap is not None:
+        stdRef = np.nanmedian(dirtySkyMap.stdMap)
+        stdVec = dirtySkyMap.stdMap[peakCoords[:,0],peakCoords[:,1]]
+        loopGain = loopGain*stdRef/stdVec
 
-    bkg = bkgMap[ycoord,xcoord]
-    std = stdMap[ycoord,xcoord]
+    # Calculating the amplitude for the model components.
+    peakVec = dirtySkyMap.skyMap[peakCoords[:,0],peakCoords[:,1]]
+    peakLatVec = dirtySkyMap.decVec[peakCoords[:,0]]
+    ampVec = peakVec*loopGain/peakInterp(peakLatVec)
+    dOmega = 4*np.pi/dirtySkyMap.skyMap.size
+    ampVec = ampVec/dOmega/np.cos(np.radians(peakLatVec))
 
-    psfMap = np.roll(psfMap,xcoord-xcent,axis=1)
-    #peak = dirtyMap[ycoord,xcoord].real
-    peak = dirtyPeakMap[ycoord,xcoord].real
+    # Creating a temporary model map.
+    tmpModelMap[peakCoords[:,0],peakCoords[:,1]] = ampVec
 
-    dirtyMap[:,:] = dirtyMap[:,:]-psfMap*peak*loopGain
-    dirtyPeakMap[:,:] = dirtyPeakMap[:,:]-psfMap*peak*loopGain
+    # Convoling the model map.
+    dirtyModelSkyMap = convolve_model_map(tmpModelMap,psfWeightsTensor)
 
-    modelMap[ycoord,xcoord] += peak*loopGain
-    #modelMap[ycoord,xcoord] += peak*loopGain*psfMap[ycoord,xcoord]
-    #print(psfMap[ycoord,xcoord]*peak*loopGain,sigThresh*std+bkg,sigThresh*std,np.abs(dirtyPeakMap[ycoord,xcoord].real))
+    # Adding to the model map.
+    modelMap[:,:] = modelMap[:,:] + tmpModelMap
+    # Calculating the residual map.
+    dirtySkyMap.coeffs = dirtySkyMap.coeffs - dirtyModelSkyMap.coeffs
 
-    if np.abs(dirtyPeakMap[ycoord,xcoord].real) <= (sigThresh*std):
-        if verbosity > 0:
-            print('Point source reached threshold:')
-            print(f'(y,x) = ',ycoord,xcoord)
-            print(f'bkg = {bkg:5.3f}')
-            print(f'std = {std:5.3f}')
-            print(f'peak = {peak:5.3f}')
-            print(psfMap[ycoord,xcoord]*peak*loopGain,sigThresh*std+bkg)
-        # If threshold reached then delete the source from the list.
-        coords = np.delete(coords,peakInd,axis=0)
+    return True
 
-    return coords
 
-def major_iteration(mmodeTensor,almTensor,residDirtyMap,modelMap,
-                    psfCoeffCube,psfWeightsTensor,skyCoeffs,coords=None,
-                    Nminor=20000,plotCond=False,thresh=4,lMax=130,lMaxVec=None,
-                    loopGain=0.1,sigThresh=2,verbosity=1,damp=0.5,
-                    cleanMask=None,windowSizeDeg=7,vmin=-1e6,vmax=1e6,
-                    linear_width=1e5):
-    """
-    Performs the major iteration. Finds CLEAN components with minor loops, and
-    then subtracts the model from the mmode visibility tensor.
+def deep_minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
+                    peakCoords,loopGain=0.1,thresh=7,
+                    windowSizeDeg=6,lMax=None,verbosity=0):
+    """deep_clean Minor iteration down to a lower threshold. Only CLEANs the 
+    model components.
 
-    Parameters:
+    Parameters
     ----------
-    mmodeTensor : np.complex64 np.ndarray
-        Mmode visibility data tensor.
-    almTensor : list or numpy array, complex64
-        Array containing the beam fringe spherical harmonic coefficients. For 
-        multi-system this is a list containing the beam fringe sh-coefficient
-        tensors for each system.
-    residDirtyMap : np.complex64 np.ndarray
-        Output residual dirty map.
-    modelMap : np.float64 np.ndarray
-        Real 2D map containing the model points.
-    paramsArr : np.float64 np.ndarray
-        2D array containing the fitted PSF Gaussian parameters. Needed to make
-        the final resotred map.
-    psfCube : np.float64 np.ndarray
-        3D numpy array, each slice has the same dimensions as the dirty map,
-        contains all the PSF maps for each declination.
-    DECgrid : np.float64 np.ndarray
-        2D DEC grid.
-    xygrid : tuple,np.float64 np.ndarray
-        Tuple containing the 2D xy-grid numpy arrays.
-    Nminor : int, default=10000
-        Number of minor loop iterations.
-    plotCond : bool, default=False
-        Plot condition, if True output plots.
-    thresh : float, default=4
-        Significance threshold in sigma for peak detection.
-    lMax : int, default=130
-        Max l-mode.
-    loopGain : float, default=0.1
-        Fraction of peak to subtraction from CLEAN component.
-    sigThresh : float, default=2
-        Significance threshold as a sigma multiple to CLEAN down towards. Lower
-        means deaper clean.
-    verbosity : int, default=1
-        CGLS output order, goes from 1-10, 1 being less output, 10 being more.
-    damp : float, default=0.5
-        CGLS dampening coefficient.
-    DECthresh : tuple, default=(41,-80)
-        Tuple containing the DEC limits (max and min) which to not CLEAN outside.
-    maskList : list, default=None
-        List containing mask tuples, each mask is a tuple of size 3 or 4, 
-        containing the (x,y,winx,winy) values (coordinates and window size).
-    cleanMask : bool np.ndarray, default=None
-        Boolean numpy array with the same shape as the dirty image. Used to find
-        peaks within only the mask region.
-    windowSizeDeg : float, default=7
-        Window size in degrees for calculating the background.
-    
+    dirtySkyMap : _type_
+        _description_
+    modelMap : _type_
+        _description_
+    peakInterp : _type_
+        _description_
+    psfWeightsTensor : _type_
+        _description_
+    loopGain : float, optional
+        _description_, by default 0.1
+    thresh : int, optional
+        _description_, by default 7
 
-    Returns:
-    ----------
+    Returns
+    -------
+    _type_
+        _description_
     """
-    # Get the background, standard deviation and threshold maps.
-    bkgMap,stdMap,threshMap = make_thresh_maps(residDirtyMap,skyCoeffs,
-                                               windowSizeDeg=windowSizeDeg)
+    # Coefficients can change between iterations.
+    #dirtySkyMap.expand_coeffs()
+    dirtySkyMap.calc_thresh_map(windowSizeDeg=windowSizeDeg,lMax=lMax)
+
+
+    xVec,yVec = peakCoords
+    #
+    SNRvec = dirtySkyMap.threshMap[yVec,xVec]
+
     if verbosity > 0:
-        print('Background, standard deviation, and threshold maps created...')
-    # Subtract the background from the residual image.
-    dirtyPeakMap = residDirtyMap.real-bkgMap
-    
-    if coords is None:
-        if verbosity > 0:
-            print('Performing peak detection...')
-        # Perform peak detection on the threshold map, apply masks if available.
-        coords = find_good_peaks(threshMap,thresh=thresh,cleanMask=cleanMask,
-                                 threshold_abs=thresh)
-    # If no sources found then exit.
-    if coords.size == 0:
-        print('No sources found.')
+        print("=========")
+        #print(SNRvec[:5])
+        print(SNRvec.mean())
+        print(SNRvec.max())
+        print(SNRvec.min())
+
+    xVec = xVec[SNRvec>=thresh]
+    yVec = yVec[SNRvec>=thresh]
+
+    if not(np.any(xVec)):
+        print("No model sources above threshold...")
         return False
     
     if verbosity > 0:
-        print(f"{coords.shape[0]} peaks found.")
+        print(f"Number of sources to CLEAN = {xVec.size}")
 
-    if plotCond:
-        # Plot the bkg, dirty map, and threshold map with coords overlaid.
-        plot_dirty_image(residDirtyMap.real,coords=coords,
-                         linear_width=linear_width,
-                         norm='asinh',title='Dirty Image',
-                         vmax=vmax,vmin=vmin)
-        if verbosity > 0:
-            # If verbosity is greater than zero and plot cond is true, plot
-            # the threshold maps.
-            plot_dirty_image(bkgMap,linear_width=linear_width,
-                            norm='asinh',title='Background')
-            plot_dirty_image(dirtyPeakMap,linear_width=linear_width,
-                            norm='asinh',title='Background-image')
-            plot_dirty_image(stdMap,linear_width=linear_width,
-                            norm='asinh',title='Std')
-            plot_dirty_image(threshMap,coords=coords,vmax=10,vmin=0,
-                            norm='linear',title='Threshold')
+    try:
+        # Need a lat grid, don't want to make it every function call.
+        peakLatVec = dirtySkyMap.latGrid[yVec,xVec]
+    except AttributeError:
+        # If there is no lat grid, then make one, should persist.
+        _,latGrid = np.meshgrid(dirtySkyMap.raVec,dirtySkyMap.decVec)
+        dirtySkyMap.latGrid = latGrid
 
+    # Creating a temporary model map.
+    tmpModelMap = np.zeros_like(dirtySkyMap.skyMap)
+
+    if dirtySkyMap.stdMap is not None:
+        stdRef = np.nanmedian(dirtySkyMap.stdMap)
+        stdVec = dirtySkyMap.stdMap[yVec,xVec]
+        loopGain = loopGain*stdRef/stdVec
+
+    #
+    peakVec = dirtySkyMap.skyMap[yVec,xVec]
+    ampVec = peakVec*loopGain/peakInterp(peakLatVec)
+    dOmega = 4*np.pi/dirtySkyMap.skyMap.size
+    ampVec = ampVec/dOmega/np.cos(np.radians(peakLatVec))
+
+    # Assigning the amplitudes.
+    tmpModelMap[yVec,xVec] = ampVec
+
+    # Convoling the model map.
+    dirtyModelSkyMap = convolve_model_map(tmpModelMap,psfWeightsTensor)
+
+    # Adding to the model map.
+    modelMap[:,:] = modelMap[:,:] + tmpModelMap
+    # Calculating the residual map.
+    dirtySkyMap.coeffs = dirtySkyMap.coeffs - dirtyModelSkyMap.coeffs
+
+    SNRvec = dirtySkyMap.threshMap[yVec,xVec]
+    
+    return True
+    
+
+def major_iter(skyCoeffs,modelMap,peakInterp,psfWeightsTensor,
+               almTensor,mmodeTensor,damp,weights=None,lMax=None,
+               lMaxVec=None,verbosity=0,cleanMask=None,maskList=None,
+               DECthresh=(90,-90),Nminor=1000,loopGain=0.1,thresh=7,sigThresh=2,
+               windowSizeDeg=6,plotCond=False,peaks_kwargs=None):
+    
+    dirtySkyMap = SkyMap(coeffs=skyCoeffs)
+    if verbosity > 0:
+        print("Calculating the median deviation map...")
+    dirtySkyMap.calc_std_map(windowSizeDeg=windowSizeDeg)
+
+    if verbosity > 0:
+        print("Calculating the clean mask...")
+    # 
+    dirtySkyMap.calc_mask(initalMask=cleanMask,DECthresh=DECthresh,
+                          maskList=maskList,plotCond=plotCond)
+
+    if verbosity > 0:
+        print(f"CLEANing down to thresh {thresh}...")
+    # Find peaks to CLEAN to a shallow PSF in the dirty Image.
     for i in tqdm(range(Nminor)):
-        # If no more sources to loop through we can cancel.
-        if coords.size == 0:
-            print(f'Minor loops finished at {i}')
+        if i%200 == 0: 
+            printCond = 1
+        else:
+            printCond = 0
+        #
+        loopCond = minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
+                              loopGain=loopGain,thresh=thresh,
+                              verbosity=printCond,windowSizeDeg=windowSizeDeg,
+                              lMax=lMax,peaks_kwargs=peaks_kwargs)
+
+        if not(loopCond):
             break
 
-        if i == 0 and plotCond:
-            plotCondMinor = True
-        else:
-            plotCondMinor = False
+    if plotCond:
+        dirtySkyMap.plot_cart_map(norm='asinh',vmin=-1e6,vmax=1e6,
+                                  linear_width=1e4)
 
+    # 
+    _,latGrid = np.meshgrid(dirtySkyMap.raVec,dirtySkyMap.decVec)
+    yGrid,xGrid = np.mgrid[:dirtySkyMap.decVec.size,:dirtySkyMap.raVec.size]
+    xVec = xGrid[modelMap!=0]
+    yVec = yGrid[modelMap!=0]
+    modelCoords = np.vstack((xVec,yVec))
+    dirtySkyMap.latGrid = latGrid
+
+    dirtySkyMap.plot_cart_map(img=modelMap,norm='asinh',vmin=-1e6,vmax=1e6,
+                              linear_width=1e4)
+
+    # Perform a deep clean using only the model parameters.
+    if verbosity > 0:
+        print(f"CLEANing model down to thresh {sigThresh}...")
+        print(f"Number of sources to CLEAN = {xVec.size}")
+    for i in tqdm(range(Nminor)):
+        if i % 200 == 0:
+            printCond = 1
+        else:
+            printCond = 0
         #
-        coords = minor_iteration(residDirtyMap,dirtyPeakMap,modelMap,
-                                 psfWeightsTensor,coords,psfCoeffCube,stdMap,
-                                 bkgMap,loopGain=loopGain,sigThresh=sigThresh,
-                                 verbosity=verbosity,plotCond=plotCondMinor)
-    # Calculate the residual dirty map.
-    residDirtyMap[:,:] = make_resid_map(modelMap,almTensor,mmodeTensor,
-                                        lMax=lMax,lMaxVec=lMaxVec,
-                                        verbosity=verbosity,damp=damp,
-                                        plotCond=plotCond,vmin=vmin,vmax=vmax,
-                                        linear_width=linear_width)
-    return True
+        loopCond = deep_minor_iter(dirtySkyMap,modelMap,peakInterp,
+                                   psfWeightsTensor,modelCoords,
+                                   loopGain=loopGain,thresh=sigThresh,
+                                   verbosity=printCond,
+                                   windowSizeDeg=windowSizeDeg,lMax=lMax)
+
+        if not(loopCond):
+            break
+
+    if plotCond:
+        #dirtySkyMap.plot_cart_map(coords=np.array([yVec,xVec]).T,norm='asinh',
+        #                          vmin=-1e6,vmax=1e6,linear_width=1e4)
+        dirtySkyMap.plot_cart_map(norm='asinh',vmin=-1e6,vmax=1e6,
+                                  linear_width=1e4)
+
+    #
+    SNRmap = np.zeros_like(modelMap)
+    SNRmap[modelMap!=0] = dirtySkyMap.threshMap[modelMap!=0]
+    #print("SNR_VECTOR")
+    #print("-------------------------")
+    #print(dirtySkyMap.threshMap[modelMap!=0])
+    # Setting model coefficients that have signal to noise maps less than 0 to 
+    # zero.
+    print(f"Number of model sources = {modelMap[modelMap!=0].size}")
+    #modelMap[SNRmap < 0] = 0
+    #print(f"Number of model sources = {modelMap[modelMap!=0].size}")
+
+    # Making the skyMap object
+    modelSkyMap = SkyMap(skyMap=modelMap)
+    # Calculating the residual sky modes through a major iteration.
+    _,skyModes = make_resid_map(modelSkyMap.coeffs,almTensor,mmodeTensor,
+                                lMax=lMax,lMaxVec=lMaxVec,weights=weights,
+                                damp=damp,returnCoeffs=True,verbosity=verbosity)
+    
+    return skyModes
+    
 
 def make_restored_map(residDirtyMap,modelMap,paramsArr,xygrid,
                       returnConvMap=False):
