@@ -17,6 +17,9 @@ import numpy as np
 import os
 import importlib.resources as resources
 import h5py as h5
+from pathlib import Path
+from mmode_tools.skymap import SkyMap
+
 
 from mmode_tools.inversion import invert_tikh_multi_assym
 from mmode_tools.io import get_config_directory
@@ -61,7 +64,6 @@ helpListCmd1 = ["Data configuration file, should be .toml.",
                 "Weights condition.",
                 "If True write over old CLEANing results.",
                 "Print additional information."]
-
 @app.command()
 def make_psf_weights(
     config_file: Annotated[str,typer.Argument(help=helpListCmd1[0])] = "",
@@ -70,35 +72,56 @@ def make_psf_weights(
     inpath: Annotated[str,typer.Option("-i",help=helpListCmd1[3])] = defaultInPath,
     outpath: Annotated[str,typer.Option("-O",help=helpListCmd1[4])] = defaultOutPath,
     outname: Annotated[str,typer.Option("-o",help=helpListCmd1[5])] = None,
-    lmax: Annotated[float,typer.Option("-l",help=helpListCmd1[6])] = 130,
+    lmax: Annotated[int,typer.Option("-l",help=helpListCmd1[6])] = 130,
     weightsCond: Annotated[bool,typer.Option("--calc-weights",help=helpListCmd1[7])] = False,
     overwrite: Annotated[bool,typer.Option(help=helpListCmd1[8])] = False,
     verbose: Annotated[bool,typer.Option("-v",help=helpListCmd1[9])] = False
 ):
+    """make_psf_weights Makes the psfWeightsTensors required for making PSF maps.
+    This follows the same method as Eastwood et al. 2018.
+
+    Parameters
+    ----------
+    config_file : Annotated[str,typer.Argument, optional
+        _description_, by default helpListCmd1[0])]=""
+    dirty_map : Annotated[str,typer.Argument, optional
+        _description_, by default helpListCmd1[1])]=""
+    config_path : Annotated[str,typer.Option, optional
+        _description_, by default helpListCmd1[2])]=defaultConfigPath
+    inpath : Annotated[str,typer.Option, optional
+        _description_, by default helpListCmd1[3])]=defaultInPath
+    outpath : Annotated[str,typer.Option, optional
+        _description_, by default helpListCmd1[4])]=defaultOutPath
+    outname : Annotated[str,typer.Option, optional
+        _description_, by default helpListCmd1[5])]=None
+    lmax : Annotated[int,typer.Option, optional
+        _description_, by default helpListCmd1[6])]=130
+    weightsCond : Annotated[bool,typer.Option, optional
+        _description_, by default helpListCmd1[7])]=False
+    overwrite : Annotated[bool,typer.Option, optional
+        _description_, by default helpListCmd1[8])]=False
+    verbose : Annotated[bool,typer.Option, optional
+        _description_, by default helpListCmd1[9])]=False
+
+    Raises
+    ------
+    ValueError
+        _description_
+    """
+    if isinstance(inpath,str):
+        inpath = Path(inpath)
     
-
-    if verbose:
-        print(f"config_file: {config_file}")
-        print(f"outname: {outname}")
-        print(f"Your input directory is {inpath}")
-        print(f"Your output directory is {outpath}")
-        print(f"Verbose: {verbose}")
-        
-
-    dirtyMapFilePath = inpath + dirty_map
-    configFilePath = config_path + config_file
-
-    # Getting the damping/regularisation parameter(s).
-    _,damp = fits2skyCoeffs(dirtyMapFilePath,readRegParams=True)
-    if isinstance(damp,np.ndarray):
-        if damp.ndim == 3:
-            # Case where there are reg params for each alm.
-            damp = damp[0,:,:]
+    if isinstance(outpath,str):
+        outpath = Path(outpath)
+    
+    if isinstance(config_path,str):
+        config_path = Path(config_path)
 
     # Loading in the some of the important meta data.
-    with open(inpath+config_file,'r') as f:
+    with open(config_path/config_file,'r') as f:
         configDict = toml.load(f)
         freq = configDict['params']['freq']
+        lMaxVec = np.array(configDict['params']['lMaxList'])
         
         if np.log10(freq) > 6:
             # Frequency is in Hz, most functions accept MHz. Stupid fix 
@@ -106,7 +129,52 @@ def make_psf_weights(
             print('Frequency in Hz, converting to MHz.')
             freq /= 1e6
 
+    #    
+    if lmax > lMaxVec.max():
+        lmax = lMaxVec.max()
+    elif lmax < lMaxVec.max():
+        lMaxVec[lMaxVec > lmax] = lmax
+
+    if outname is None:
+        # If not given then create a name using the configfilepath as a 
+        # template.
+        #prefix = os.path.split(config_file)[1].split('.')[0].split('config')[0]
+        prefix = os.path.split(config_file)[1].split('.')[0]
+        outName = prefix +f"lmax{lmax}" + "_clean-components.hdf5"
+    else:
+        outName = outname
+    outFilePath = outpath / outName
+
+    if verbose:
+        print(f"config_file: {config_file}")
+        print(f"outname: {outname}")
+        print(f"Your input directory is {inpath}")
+        print(f"Your output directory is {outpath}")
+        print(f"outFileName = {outName}")
+        print(f"Verbose: {verbose}")
+    
     #
+    dirtyMapFilePath = inpath / dirty_map
+    configFilePath = config_path / config_file
+
+    # Initialising the dirty map into a SkyMap object.
+    dirtySkyMap = SkyMap(dirtyMapFilePath)
+    
+    # Getting the damping/regularisation parameter(s).
+    damp = dirtySkyMap.weights # Weights are the SH damping coefficients.
+    if isinstance(damp,np.ndarray):
+        if damp.ndim == 3:
+            # Case where there are reg params for each alm.
+            # We only care about the positive m-mode values.
+            damp = damp[0,:,:]
+
+
+    #print(dirtyMapFilePath)
+    #print(configFilePath)
+
+    #import sys
+    #sys.exit(0)
+    # Loading in the data.
     _,almTensorList,weights = load_data(configFilePath,lMax=lmax,freq=freq,
                                         calcWeights=weightsCond,
                                         filterParams=None,
@@ -117,24 +185,42 @@ def make_psf_weights(
         Nbase = sum([alm.shape[0] for alm in almTensorList])
         weights = np.ones(Nbase)
 
-    #
+    
+    # Calculating the PSFweights Tensor.
     psfWeightsTensor = calc_psf_weights_tensor(almTensorList,damp=damp,
                                                weights=weights)
-    
-    if outname is None:
-        # If not given then create a name using the configfilepath as a 
-        # template.
-        prefix = os.path.split(config_file)[1].split('.')[0]
-        outName = prefix +f"_lmax{lMax}" + "_clean-components.hdf5"
-    else:
-        outName = outname
-    outFilePath = outpath + outName
 
-    print(f"File saved to {outFilePath}")
     # Saving the psfWeightsTesnor to an ouptut hdf5 file.
+    if outFilePath.exists():
+        # Check if there is an existing file.
+        with h5.File(outFilePath,'a') as hf:
+            hf.attrs['dirtyFilePath'] = str(dirtyMapFilePath)
+            hf.attrs['configFilePath'] = str(configFilePath)
+            try:
+                group = hf.create_group("psfWeightsTensor")
+            except ValueError:
+                print('Group data already exists.')
+                dset = hf['psfWeightsTensor/weightsTensor']
 
+                if dset.shape == psfWeightsTensor.shape:
+                    # If the shapes are equal we can assign the new psf weight 
+                    # tensor. Otherwise we raise a value error.
+                    dset[...] = psfWeightsTensor
+                else:
+                    err = f'dset.shape {dset.shape} != psfWeightsTensor.shape'+\
+                            f' {psfWeightsTensor.shape}.'
+                    raise ValueError(err)
+    else:
+        # If the file does not exist we create one.
+        with h5.File(outFilePath,'w') as hf:
+            hf.attrs['dirtyFilePath'] = str(dirtyMapFilePath)
+            hf.attrs['configFilePath'] = str(configFilePath)
 
-
+            # Creating the weights tensor dataset and group.
+            group = hf.create_group("psfWeightsTensor")
+            group.create_dataset("weightsTensor",data=psfWeightsTensor)   
+    #
+    print(f"File saved to {outFilePath}")
 
 
 @app.command()
@@ -152,7 +238,7 @@ def make_mask_list(
 ):
     from pyshtools import SHCoeffs
 
-    dirtyMapFilePath = inpath + dirty_map
+    dirtyMapFilePath = inpath / dirty_map
     skyCo,_ = fits2skyCoeffs(dirtyMapFilePath,readRegParams=True)
 
     coeffsObj = SHCoeffs.from_array(skyCo,normalization='ortho',csphase=-1)
