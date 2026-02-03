@@ -658,13 +658,13 @@ class SkyMap:
         #axs.set_yticklabels(axs.get_yticks().astype(int),fontsize=fontsize)
         [x.set_linewidth(2.) for x in axs.spines.values()]
 
-
+        axs.set_yscale('log')
 
     # TODO make these functions wrappers for functions in plots. 
     def plot_cart_map(self,img=None,coords=None,figaxs=None,
                       cmap='twilight_shifted',vmin=None,vmax=None,
                       linear_width=None,norm='linear',title=None,patchList=None,
-                      lMax=None,**kwargs):
+                      lMax=None,figsize=(11,5),**kwargs):
         """plot_cart_map Function plots the cartesian form of the map.
 
         Parameters
@@ -705,7 +705,7 @@ class SkyMap:
             img = self.skyMap
 
         if figaxs == None:
-            fig,axs = plt.subplots(1,figsize=(11,5))
+            fig,axs = plt.subplots(1,figsize=figsize)
         else:
             fig,axs = figaxs
 
@@ -752,9 +752,9 @@ class SkyMap:
             axs.add_patch(square)
     
     #
-    def plot_equatorial_map(self,lon=None,lat=None,galactic=False,lMax=None,
-                            figsize=(16,10),norm='linear',vmax=None,vmin=None,
-                            linear_width=None,projection='mollweide',
+    def plot_equatorial_map(self,lon=None,lat=None,img=None,galactic=False,
+                            lMax=None,figsize=(16,10),norm='linear',vmax=None,
+                            vmin=None,linear_width=None,projection='mollweide',
                             cmap='twilight_shifted',shading='gouraud',grid=True,
                             fontsize=20,ticks=True,figaxs=None,xticks=False,
                             title=None,transparent=False):
@@ -805,15 +805,15 @@ class SkyMap:
 
         # Performing check on new lMax input.            
         lMax = self.lmax_check(lMax=lMax)
-        img = None
-        if galactic:
-            if self.skyMapGalactic is None:
-                self.expand_coeffs(galactic=True,lMax=lMax)
-            img = self.skyMapGalactic
-        else:
-            if self.skyMap is None:
-                self.expand_coeffs(lMax=lMax)
-            img = self.skyMap
+        if img is None:
+            if galactic:
+                if self.skyMapGalactic is None:
+                    self.expand_coeffs(galactic=True,lMax=lMax)
+                img = self.skyMapGalactic
+            else:
+                if self.skyMap is None:
+                    self.expand_coeffs(lMax=lMax)
+                img = self.skyMap
 
         if norm == 'linear':
             norm = Normalize(vmin=vmin,vmax=vmax)
