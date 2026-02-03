@@ -106,6 +106,9 @@ def fit_map_main(
 
     if isinstance(inpath,str):
         inpath = Path(inpath)
+    
+    if isinstance(outpath,str):
+        outpath = Path(outpath)
 
     # Loading in the some of the important meta data.
     with open(inpath/config_file,'r') as f:
@@ -161,6 +164,7 @@ def fit_map_main(
         outName = prefix +f"_lmax{lMax}" + "_dirty-map.fits"
     else:
         outName = outname
+    #
     outFilePath = outpath / outName
 
 
