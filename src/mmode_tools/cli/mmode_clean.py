@@ -81,7 +81,8 @@ def print_full_line(character='-'):
         
         # Print the character repeated to fill the width
         # Subtracting 1 from the width can prevent an extra, unwanted newline 
-        # that some terminals automatically add when the very last column is filled.
+        # that some terminals automatically add when the very last column is 
+        # filled.
         print(character * (columns - 1)) 
     except OSError:
         # Fallback for environments where terminal size cannot be determined
@@ -197,8 +198,6 @@ def make_psf_weights(
         print(f"output file name = {outName}")
         print(f"Verbose: {verbose}")
         print_full_line()
-    
-    
 
     # Initialising the dirty map into a SkyMap object.
     dirtySkyMap = SkyMap(dirtyMapFilePath)
@@ -226,8 +225,9 @@ def make_psf_weights(
     # Calculating the PSFweights Tensor.
     psfWeightsTensor = calc_psf_weights_tensor(almTensorList,damp=damp,
                                                weights=weights)
-
+    print_full_line()
     if calc_peak_vec:
+        print("Calculating the dirty peak max vector as a function of latitude.")
         latVec,dirtyPeakVec,dirtyMonopoleVec = calc_peak_max_vec(dirtySkyMap,
                                                                  psfWeightsTensor,
                                                                  lmax,stride=10)
