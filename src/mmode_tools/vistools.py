@@ -78,11 +78,7 @@ def vis2mmode_DFT(covTensor,lstVec,goodInds,Ncells,rMatrix=None,IDFT=True,
             from mmode_tools.flag import plot_autos
             from matplotlib import pyplot as plt
             antInd1,antInd2 = 28,11
-            #antInd1,antInd2 = 21,37
             antInd1,antInd2 = 5,11
-            #antInd1,antInd2 = 30,42
-            #antInd1,antInd2 = 26,12
-            #antInd1,antInd2 = 0,17
             testVec = mmodeTensor[1,:,antInd1,antInd2]
             testVecConj = mmodeTensor[1,:,antInd2,antInd1]
 
