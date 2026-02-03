@@ -257,6 +257,7 @@ def make_psf_weights(
                 
                 if latVec is not None:
                     # overwriting the dirty peak vec.
+                    group = hf["psfWeightsTensor"]
                     group.attrs['latVec'][...] = latVec
                     group.attrs['dirtyPeakVec'][...] = dirtyPeakVec
                     group.attrs['dirtyMonopoleVec'][...] = dirtyMonopoleVec
