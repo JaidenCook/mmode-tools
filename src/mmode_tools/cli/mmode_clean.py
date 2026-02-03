@@ -117,8 +117,12 @@ def make_psf_weights(
     if isinstance(config_path,str):
         config_path = Path(config_path)
 
+    # Config file and dirty map filepaths.
+    dirtyMapFilePath = inpath / dirty_map
+    configFilePath = config_path / config_file
+
     # Loading in the some of the important meta data.
-    with open(config_path/config_file,'r') as f:
+    with open(configFilePath,'r') as f:
         configDict = toml.load(f)
         freq = configDict['params']['freq']
         lMaxVec = np.array(configDict['params']['lMaxList'])
@@ -147,15 +151,14 @@ def make_psf_weights(
 
     if verbose:
         print(f"config_file: {config_file}")
-        print(f"outname: {outname}")
+        print(f"dirty map file: {dirty_map}")
         print(f"Your input directory is {inpath}")
         print(f"Your output directory is {outpath}")
-        print(f"outFileName = {outName}")
+        print(f"output file name = {outName}")
         print(f"Verbose: {verbose}")
+        print_full_line()
     
-    #
-    dirtyMapFilePath = inpath / dirty_map
-    configFilePath = config_path / config_file
+    
 
     # Initialising the dirty map into a SkyMap object.
     dirtySkyMap = SkyMap(dirtyMapFilePath)
@@ -168,12 +171,6 @@ def make_psf_weights(
             # We only care about the positive m-mode values.
             damp = damp[0,:,:]
 
-
-    #print(dirtyMapFilePath)
-    #print(configFilePath)
-
-    #import sys
-    #sys.exit(0)
     # Loading in the data.
     _,almTensorList,weights = load_data(configFilePath,lMax=lmax,freq=freq,
                                         calcWeights=weightsCond,
@@ -185,7 +182,7 @@ def make_psf_weights(
         Nbase = sum([alm.shape[0] for alm in almTensorList])
         weights = np.ones(Nbase)
 
-    
+    print_full_line()
     # Calculating the PSFweights Tensor.
     psfWeightsTensor = calc_psf_weights_tensor(almTensorList,damp=damp,
                                                weights=weights)
@@ -220,6 +217,7 @@ def make_psf_weights(
             group = hf.create_group("psfWeightsTensor")
             group.create_dataset("weightsTensor",data=psfWeightsTensor)   
     #
+    print_full_line()
     print(f"File saved to {outFilePath}")
 
 
