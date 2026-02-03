@@ -45,8 +45,8 @@ def get_config_directory(pathName=None):
     else:
         print("List of mmode_tools directories by key:")
         for pathKey in list(directoryDict.keys()):
-            dirName = (BASEDIR / directoryDict[pathKey])._str
-            print(f"{pathKey}: " + dirName)
+            dirName = (BASEDIR / directoryDict[pathKey])
+            print(f"{pathKey}: ", dirName)
         
         return None
 
