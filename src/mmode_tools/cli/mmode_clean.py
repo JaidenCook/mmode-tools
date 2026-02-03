@@ -30,6 +30,46 @@ from mmode_tools.clean import calc_psf_weights_tensor
 from mmode_tools.io import read_data_config
 from mmode_tools.clean import calc_clean_mask,make_mask_box
 
+def calc_peak_max_vec(dirtySkyMap,psfWeightsTensor,lmax,stride=10):
+    """calc_peak_max_vec _summary_
+
+    Parameters
+    ----------
+    dirtySkyMap : _type_
+        _description_
+    psfWeightsTensor : _type_
+        _description_
+    lmax : _type_
+        _description_
+    stride : int, optional
+        _description_, by default 10
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    
+    latVec = dirtySkyMap.colat[::stride]-90
+    dirtyPeakMaxVec = np.zeros(dirtySkyMap.colat[::stride].size)
+    dirtyMonopoleVec = np.zeros(dirtySkyMap.colat[::stride].size,
+                                dtype=np.complex64)
+    from tqdm import tqdm
+    from mmode_tools.skymap import convolve_model_map,calc_analytic_ps
+    for ind,colat in enumerate(tqdm(dirtySkyMap.colat[::stride])):
+
+        amp = 1/np.cos(np.radians(colat-90))
+        almPs = calc_analytic_ps(colat,180,amp,lMax=lmax)
+
+        modelPointMap = SkyMap(coeffs=almPs)
+        dirtyModelPointMap = convolve_model_map(modelPointMap,psfWeightsTensor,
+                                                lMax=lmax)
+
+        dirtyPeakMaxVec[ind] = dirtyModelPointMap.skyMap.max()
+        dirtyMonopoleVec[ind] = dirtyModelPointMap.coeffs[0,0,0]
+    
+    return latVec,dirtyPeakMaxVec,dirtyMonopoleVec
+
 def print_full_line(character='-'):
     """
     Prints a line of a specified character that covers the full width 
@@ -62,7 +102,7 @@ helpListCmd1 = ["Data configuration file, should be .toml.",
                 "Output name, default is None.",
                 "Maximum spherical harmonic degree, default = 130.",
                 "Weights condition.",
-                "If True write over old CLEANing results.",
+                "If True calculate the peak max PSF as a function of latitude.",
                 "Print additional information."]
 @app.command()
 def make_psf_weights(
@@ -74,7 +114,7 @@ def make_psf_weights(
     outname: Annotated[str,typer.Option("-o",help=helpListCmd1[5])] = None,
     lmax: Annotated[int,typer.Option("-l",help=helpListCmd1[6])] = 130,
     weightsCond: Annotated[bool,typer.Option("--calc-weights",help=helpListCmd1[7])] = False,
-    overwrite: Annotated[bool,typer.Option(help=helpListCmd1[8])] = False,
+    calc_peak_vec: Annotated[bool,typer.Option("--calc-peak-vec",help=helpListCmd1[8])] = False,
     verbose: Annotated[bool,typer.Option("-v",help=helpListCmd1[9])] = False
 ):
     """make_psf_weights Makes the psfWeightsTensors required for making PSF maps.
@@ -187,6 +227,13 @@ def make_psf_weights(
     psfWeightsTensor = calc_psf_weights_tensor(almTensorList,damp=damp,
                                                weights=weights)
 
+    if calc_peak_vec:
+        latVec,dirtyPeakVec,dirtyMonopoleVec = calc_peak_max_vec(dirtySkyMap,
+                                                                 psfWeightsTensor,
+                                                                 lmax,stride=10)
+    else:
+        latVec,dirtyPeakVec,dirtyMonopoleVec = None,None,None
+
     # Saving the psfWeightsTesnor to an ouptut hdf5 file.
     if outFilePath.exists():
         # Check if there is an existing file.
@@ -207,6 +254,12 @@ def make_psf_weights(
                     err = f'dset.shape {dset.shape} != psfWeightsTensor.shape'+\
                             f' {psfWeightsTensor.shape}.'
                     raise ValueError(err)
+                
+                if latVec is not None:
+                    # overwriting the dirty peak vec.
+                    group.attrs['latVec'][...] = latVec
+                    group.attrs['dirtyPeakVec'][...] = dirtyPeakVec
+                    group.attrs['dirtyMonopoleVec'][...] = dirtyMonopoleVec
     else:
         # If the file does not exist we create one.
         with h5.File(outFilePath,'w') as hf:
@@ -215,7 +268,13 @@ def make_psf_weights(
 
             # Creating the weights tensor dataset and group.
             group = hf.create_group("psfWeightsTensor")
-            group.create_dataset("weightsTensor",data=psfWeightsTensor)   
+            group.create_dataset("weightsTensor",data=psfWeightsTensor)
+
+            if latVec is not None:
+                # Assigning the dirty peak vec.
+                group.attrs['latVec'] = latVec
+                group.attrs['dirtyPeakVec'] = dirtyPeakVec
+                group.attrs['dirtyMonopoleVec'] = dirtyMonopoleVec
     #
     print_full_line()
     print(f"File saved to {outFilePath}")
