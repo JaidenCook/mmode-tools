@@ -535,10 +535,10 @@ class SkyMap:
         if self.threshMap is None:
             self.calc_thresh_map(windowSizeDeg=windowSizeDeg)
             threshMap = np.copy(self.threshMap)
+        else:
+            threshMap = np.copy(self.threshMap)
 
         if self.cleanMask is not None:
-
-            threshMap = np.copy(self.threshMap)
             threshMap[self.cleanMask == False] = 0
 
          # Performing the peak detection on the masked threshold map.
