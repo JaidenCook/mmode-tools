@@ -9,7 +9,7 @@ import cmasher as cmr
 
 def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
                           scale='linear',title=None,xlim=None,ylim=None,
-                          plotReal=False,plotImag=False):
+                          plotReal=False,plotImag=False,plotAmp=False):
     """
     Plots the visibility fringes for a given baseline over as a function of
     LST.
@@ -53,8 +53,11 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
     elif plotImag:
         axs.plot(lstVec,covTensor[:,antInd1,antInd2].imag,label='Imaginary',
              color='tab:blue')
+    elif plotAmp:
+        axs.plot(lstVec,np.abs(covTensor[:,antInd1,antInd2]),color='k',
+                 zorder=1e3,label='Amplitude',linewidth=3,alpha=0.5)
     
-    if not(plotReal) and not(plotImag):
+    if not(plotReal) and not(plotImag) and not(plotAmp):
         axs.plot(lstVec,np.abs(covTensor[:,antInd1,antInd2]),color='k',
                  zorder=1e3,label='Amplitude',linewidth=3,alpha=0.5)
         axs.plot(lstVec,covTensor[:,antInd1,antInd2].real,
