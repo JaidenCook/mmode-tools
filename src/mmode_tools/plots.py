@@ -8,7 +8,8 @@ from matplotlib.colors import AsinhNorm,Normalize,LogNorm
 import cmasher as cmr
 
 def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
-                          scale='linear',title=None,xlim=None,ylim=None):
+                          scale='linear',title=None,xlim=None,ylim=None,
+                          plotReal=False,plotImag=False):
     """
     Plots the visibility fringes for a given baseline over as a function of
     LST.
@@ -46,12 +47,20 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
     # Getting the antenna indices.
     antInd1,antInd2 = antPair
     #
-    axs.plot(lstVec,np.abs(covTensor[:,antInd1,antInd2]),color='k',zorder=1e3,
-             label='Amplitude',linewidth=3,alpha=0.5)
-    axs.plot(lstVec,covTensor[:,antInd1,antInd2].real,label='Real',
-             color='tab:red')
-    axs.plot(lstVec,covTensor[:,antInd1,antInd2].imag,label='Imaginary',
+    if plotReal:
+        axs.plot(lstVec,covTensor[:,antInd1,antInd2].real,
+                 label='Real',color='tab:red')
+    elif plotImag:
+        axs.plot(lstVec,covTensor[:,antInd1,antInd2].imag,label='Imaginary',
              color='tab:blue')
+    
+    if not(plotReal) and not(plotImag):
+        axs.plot(lstVec,np.abs(covTensor[:,antInd1,antInd2]),color='k',
+                 zorder=1e3,label='Amplitude',linewidth=3,alpha=0.5)
+        axs.plot(lstVec,covTensor[:,antInd1,antInd2].real,
+                 label='Real',color='tab:red')
+        axs.plot(lstVec,covTensor[:,antInd1,antInd2].imag,
+                 label='Imaginary',color='tab:blue')
 
     axs.set_xlabel('LST [hours]',fontsize=20)
     axs.set_ylabel('Amplitude',fontsize=20)
