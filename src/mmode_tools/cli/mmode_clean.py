@@ -258,9 +258,14 @@ def make_psf_weights(
                 if latVec is not None:
                     # overwriting the dirty peak vec.
                     group = hf["psfWeightsTensor"]
-                    group.attrs['latVec'][...] = latVec
-                    group.attrs['dirtyPeakVec'][...] = dirtyPeakVec
-                    group.attrs['dirtyMonopoleVec'][...] = dirtyMonopoleVec
+                    try:
+                        group.attrs['latVec'][...] = latVec
+                        group.attrs['dirtyPeakVec'][...] = dirtyPeakVec
+                        group.attrs['dirtyMonopoleVec'][...] = dirtyMonopoleVec
+                    except KeyError:
+                        group.attrs['latVec'] = latVec
+                        group.attrs['dirtyPeakVec'] = dirtyPeakVec
+                        group.attrs['dirtyMonopoleVec'] = dirtyMonopoleVec
     else:
         # If the file does not exist we create one.
         with h5.File(outFilePath,'w') as hf:
