@@ -21,7 +21,7 @@ dependencies = [
     "h5py",
     "healpy",
     "joblib",
-    "pylops",
+    "pylops==2.5.0",
     "pyshtools",
     "matplotlib",
     "scikit-image",
