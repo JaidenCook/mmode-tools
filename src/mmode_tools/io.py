@@ -31,7 +31,6 @@ def get_config_directory(pathName=None):
         Absolute path.
     """
     import importlib.resources as resources
-
     configFile = "default_config.toml"
     mmodeConfigPath = "mmode_tools.config"
 
@@ -824,7 +823,6 @@ def write_data_config(outFilePath,dataFilePaths,interferometers,telescopes,
             rMax = np.nanmax(np.sqrt(interferometer.uu_m**2 + \
                                      interferometer.vv_m**2))
             lMaxList.append(int(2*np.pi*rMax/lam)+1)
-
 
     # Creating the data configuration dictionary.
     dataConfig = {
