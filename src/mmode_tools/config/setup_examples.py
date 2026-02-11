@@ -80,7 +80,6 @@ def make_point_covtensor(freq=150e6,raSrc=0,decSrc=0,srcFlux=1.0,lMax=130):
         interferometers = {interferometer.telescope : interferometer,
                         interferometer.telescope : interferometer,}
         telescopes = [interferometer.telescope,interferometer.telescope]
-        #dates = ["",""]
 
         beamFringeFilePaths = [beamFringePath + "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5",
                             beamFringePath + "beam_fringe_coeffs-N32-150MHz-I-lMax130.hdf5"]
