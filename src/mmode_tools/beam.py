@@ -137,7 +137,7 @@ def bline2alm(baselines,beam,freq,lat,lMax,almCoeffsTensor=None):
 
 def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
                    chunks=False,compression="lzf",telescope=None,
-                   negModes=False):
+                   negModes=False,verbose=False):
     """
     Function to generate the alm coefficient tensor given a set of baselines, 
     telescope primary beam and the required frequency. Uses a relatively slower 
@@ -230,8 +230,9 @@ def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
     g.attrs['negModes'] = negModes
 
     hf.close()
-
-    print(f"File saved to {outFilePath}")
+    if verbose:
+        print(f"Negative m-modes saved.")
+        print(f"File saved to {outFilePath}")
 
     return None
 

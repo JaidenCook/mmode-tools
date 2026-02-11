@@ -177,7 +177,7 @@ def beam_coefficients_main(
     # Generating the alm beam coefficients.
     bline2alm_h5py(blines,antPairs,beamMap,freq,np.radians(arrayLat),lmax,
                    outFilePath,chunks=chunks,compression=compression,
-                   negModes=neg_modes)
+                   negModes=neg_modes,verbose=verbose)
     
     print("Updating the telescope config file with beam fringe model metadata.")
     try:
