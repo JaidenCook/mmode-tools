@@ -69,7 +69,7 @@ def split_baseline(baselineIDs):
     return ant1,ant2
 
 def load_alm_tensor_list(beamFilePaths,telescopes,flagMatrixDict,
-                         lMax=160,filterParams=None):
+                         lMax=160,filterParams=None,negModes=False):
     """
     Parameters
     ----------
@@ -88,7 +88,8 @@ def load_alm_tensor_list(beamFilePaths,telescopes,flagMatrixDict,
         # Appending.
         flagMatrixTemp = flagMatrixDict[telescopes[i]]
         almTemp = load_beam_fringe_coef(beamFilePath,lmax=lMax,
-                                        flagMatrix=flagMatrixTemp)
+                                        flagMatrix=flagMatrixTemp,
+                                        negModes=negModes)
         
         if filterParams is not None and isinstance(filterParams,dict):
             # If given and telescope name is present, then apply a filter to 

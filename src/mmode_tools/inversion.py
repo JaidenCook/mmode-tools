@@ -598,7 +598,11 @@ def filter_coefficients(coeffs,lmax=200,lcut=130,lwin=None,
 
     
     # Apply the filter to all coefficients.
-    coeffs[...] = coeffs*filterVec[None,:,None]
+    if coeffs.ndim == 3:
+        coeffs[...] = coeffs*filterVec[None,:,None]
+    elif coeffs.ndim ==4:
+        # includes both positive and negative m-modes.
+        coeffs[...] = coeffs*filterVec[None,None,:,None]
 
     return None
 
