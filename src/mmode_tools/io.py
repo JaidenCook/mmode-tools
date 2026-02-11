@@ -9,9 +9,20 @@ import toml
 import os
 from mmode_tools.constants import c,MRO,ONSALA
 from pathlib import Path
+import importlib.resources as resources
+
 
 BASEDIR = Path.home() / "mmode_tools/"
 
+configFile = "default_config.toml"
+mmodeConfigPath = "mmode_tools.config"
+with resources.files(mmodeConfigPath).joinpath(configFile).open("r") as f:
+    paths = toml.load(f).get("files", {})
+    try:
+        params = toml.load(f).get("params", {})
+        MEMLIM = int(params["MEMLIM"])
+    except KeyError:
+        MEMLIM = 64
 
 def get_config_directory(pathName=None):
     """
@@ -689,7 +700,7 @@ def read_flags(filepath,verbose=False):
 
 
 def load_beam_fringe_coef(filePath,lmax=130,flagMatrix=None,autos=False,
-                          verbose=False,memLim=128):
+                          verbose=False,memLim=MEMLIM,negModes=False):
     """
     This function takes an input filepath to a hdf5 file which contains the 
     beam fringe coefficients for a given telescope. Provided an lmax and a 
@@ -756,14 +767,14 @@ def load_beam_fringe_coef(filePath,lmax=130,flagMatrix=None,autos=False,
             print(f'CoeffTensor.shape = {dset.shape}')
             print(f'CoeffTensor size = {dset.nbytes/1024**3:5.3f} GB')
             print(f'Dataset size = {dsetMem:5.3f} GB')
-        # If memory allocation larger than available memory, lazy load the data.
+        # If memory allocation too large raise error.
         if memAlloc > memLim:
-            almCoeffTensor = np.zeros((blineIDs.size,lmax+1,lmax+1),
-                                      dtype=np.complex64)
-            # Loop through each baseline. Faster if data chunked.
-            for i,bind in enumerate(tqdm(blineIDs)):
-                for m in range(lmax+1):
-                    almCoeffTensor[i,:lmax+1,m] = dset[bind,:lmax+1,m]
+            emsg = f"almCoeffTensor memory requirement {memAlloc} too large."
+
+            raise MemoryError(emsg)
+        
+        if negModes and (dset.ndim==4):
+            almCoeffTensor = dset[blineIDs,:,:lmax+1,:lmax+1]
         else:
             almCoeffTensor = dset[blineIDs,:lmax+1,:lmax+1]
     
