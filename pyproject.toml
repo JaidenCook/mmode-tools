@@ -41,6 +41,7 @@ calc-beam-coefficients = "mmode_tools.cli.cli:beamCoApp"
 generate-telescope-config = "mmode_tools.cli.cli:telescopeConfigApp"
 fit-map = "mmode_tools.cli.cli:fitMapApp"
 mmode-clean = "mmode_tools.cli.cli:mmodeClean"
+data-config = "mmode_tools.cli.cli:dataConfigApp"
 
 [tool.setuptools.package-data]
 "mmode_tools.data" = ["*.fits","*.toml","*.h5"]
