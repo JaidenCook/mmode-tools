@@ -4,10 +4,13 @@ from .beam_coefficients import beam_coefficients_main
 from .telescope_config import telescope_config_main
 from .fit_map import fit_map_main
 from .mmode_clean import app as mmodeClean
-
+from .data_config import data_config_main
 
 telescopeConfigApp = typer.Typer()
 telescopeConfigApp.command()(telescope_config_main)
+
+dataConfigApp = typer.Typer()
+dataConfigApp.command()(data_config_main)
 
 beamCoApp = typer.Typer()
 beamCoApp.command()(beam_coefficients_main)
@@ -19,6 +22,7 @@ fitMapApp.command()(fit_map_main)
 
 if __name__ == "__main__":
     telescopeConfigApp()
+    dataConfigApp()
     beamCoApp()
     fitMapApp()
     mmodeClean()
