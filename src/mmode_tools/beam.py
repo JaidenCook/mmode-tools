@@ -136,7 +136,8 @@ def bline2alm(baselines,beam,freq,lat,lMax,almCoeffsTensor=None):
         return almCoeffsTensor
 
 def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
-                   chunks=False,compression="lzf",telescope=None):
+                   chunks=False,compression="lzf",telescope=None,
+                   negModes=False):
     """
     Function to generate the alm coefficient tensor given a set of baselines, 
     telescope primary beam and the required frequency. Uses a relatively slower 
@@ -171,11 +172,15 @@ def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
     Nbase = baselines.shape[0]
     lmnGrid = gen_lmn(lat,Ncells)
     # baselines * l * m
-    almShape = (Nbase,lMax+1,lMax+1)
+    if negModes:
+        almShape = (Nbase,2,lMax+1,lMax+1)
+    else:
+        almShape = (Nbase,lMax+1,lMax+1)
 
     # This should be a default.
     if outFilePath == None:
-        outPath = "/data/M-MODE/beam_fringe_maps/"
+        from mmode_tools.io import get_config_directory
+        beamFringePath = get_config_directory(pathName="beamFringePath")
         outName = "beam_fringe_coeffs"
         if telescope:
             outName += f"-{telescope}"
@@ -185,7 +190,7 @@ def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
             outName += f"-{compression}.hdf5"
         else:
             outName += f".hdf5" 
-        outFilePath = outPath+outName
+        outFilePath = beamFringePath+outName
 
     hf = h5.File(outFilePath,'w')
     g = hf.create_group('data')
@@ -211,12 +216,18 @@ def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
         alm = beamFringeGrid.expand(normalization='ortho',csphase=-1,
                                  lmax_calc=int(lMax),backend='ducc')
         
-        # We only care about the positive (or the negative) m-modes.
-        almCoeffsTensor[blineInd,:,:] = alm.coeffs[0,:,:]
+        # We only care about the positive (or the negative) m-modes. However,
+        # we include an option to save the negative modes as well. Note this
+        # doubles the memory requirement.
+        if negModes:
+            almCoeffsTensor[blineInd,:,:,:] = alm.coeffs
+        else:
+            almCoeffsTensor[blineInd,:,:] = alm.coeffs[0,:,:]
 
     g.attrs['lMax'] = lMax
     g.attrs['Ncell'] = Ncells
     g.attrs['timestamp'] = str(datetime.datetime.now())
+    g.attrs['negModes'] = negModes
 
     hf.close()
 
