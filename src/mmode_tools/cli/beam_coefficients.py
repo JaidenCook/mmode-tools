@@ -13,6 +13,7 @@ from pathlib import Path
 import typer
 from typing_extensions import Annotated
 import toml
+from copy import copy
 import numpy as np
 import os
 import importlib.resources as resources
@@ -87,6 +88,7 @@ def beam_coefficients_main(
 
     with open(interferometerPath/config_file, 'r') as f:
         config = toml.load(f)
+        newConfig = copy(config)
         arrayLat = config['location']['lat']
         telescope = config['params']['telescope']
         override = config['params']['override']
@@ -145,6 +147,7 @@ def beam_coefficients_main(
         elif pol == "YY" or pol == "Y" or pol == "yy" or pol == "y":
             pol = "Y"
         beamMap = MWA_dipolebeam(freq,np.radians(arrayLat),Ncells,pol=pol)
+        beamModel = "hyperbeam"
     else:
         if beam_file == "" or not os.path.exists(beam_file):
             from mmode_tools.examples import load_default_beam_model
@@ -153,10 +156,13 @@ def beam_coefficients_main(
 
             beamMap = load_default_beam_model(LAT=np.radians(arrayLat),
                                               pol=pol,lMax=lmax,freq=freq)
+            beamModel = "physical_dipole"
+            beam_file = None
         else:
             # Load in the primary beam map form the fits file.
             print(f"Ncells = {Ncells}")
             beamMap = FITS2beam(beam_file,np.radians(arrayLat),lmax)
+            beamModel = "FITSmap"
 
 
     # If True plot the primary beam map.
@@ -168,3 +174,25 @@ def beam_coefficients_main(
     # Generating the alm beam coefficients.
     bline2alm_h5py(blines,antPairs,beamMap,freq,np.radians(arrayLat),lmax,
                    outFilePath,chunks=chunks,compression=compression)
+    
+    print("Updating the telescope config file with beam fringe model metadata.")
+    try:
+        # Try and acess the beam-model key, if it doesn't exist create it.
+        beamModelDict = newConfig["beam-models"]
+        stokesList = beamModelDict["stokes"]
+        freqs = beamModelDict["freqs"]
+        beamFringeFilePaths = beamModelDict["beamFringeFilePaths"]
+        stokesList.append(pol)
+        freqs.append(freq)
+        beamFringeFilePaths.append(str(outFilePath))
+    except KeyError:
+        beamModelDict = {"primaryBeamType" : beamModel,
+                        "primaryBeamPath" : beam_file, 
+                        "stokes" : [pol],
+                        "freqs" : [freq],
+                        "beamFringeFilePaths" : [str(outFilePath)]}
+    #
+    newConfig["beam-models"] = beamModelDict
+
+    with open(interferometerPath/config_file, 'w') as f:
+        toml.dump(newConfig,f)
