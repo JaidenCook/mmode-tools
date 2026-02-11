@@ -40,6 +40,7 @@ helpList = ["Telescope configuration file name.",
             "Location of the output directory",
             "Plot the primary beam map in RA/DEC.",
             "If True chunk the coefficients.",
+            "If True save the negative m-modes.",
             "Compression to use, only works if chunks set to True.",
             "Print additional information."]
 
@@ -56,10 +57,11 @@ def beam_coefficients_main(
                                         help=helpList[6])] = None,
     plot: Annotated[bool,typer.Option("-p","--plot",help=helpList[7])] = False,
     chunks: Annotated[bool,typer.Option("-c",help=helpList[8])] = False,
+    neg_modes: Annotated[bool,typer.Option("-n","--neg-mmodes",help=helpList[9])] = False,
     compression: Annotated[str,typer.Option("--compression",
-                                            help=helpList[9])] = "lzf",
+                                            help=helpList[10])] = "lzf",
     verbose: Annotated[bool,typer.Option("-v","--verbose",
-                                         help=helpList[10])] = False
+                                         help=helpList[11])] = False
 ):
     
     if verbose:
@@ -72,6 +74,7 @@ def beam_coefficients_main(
         print(f"Verbose: {verbose}")
         print(f"Plot: {plot}")
         print(f"Chunks: {chunks}")
+        print(f"Save negative mmodes: {neg_modes}")
         print(f"Compression: {compression}")
     
     if isinstance(outpath,str):
@@ -173,7 +176,8 @@ def beam_coefficients_main(
     
     # Generating the alm beam coefficients.
     bline2alm_h5py(blines,antPairs,beamMap,freq,np.radians(arrayLat),lmax,
-                   outFilePath,chunks=chunks,compression=compression)
+                   outFilePath,chunks=chunks,compression=compression,
+                   negModes=neg_modes)
     
     print("Updating the telescope config file with beam fringe model metadata.")
     try:
