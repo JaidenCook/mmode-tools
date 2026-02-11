@@ -54,7 +54,6 @@ def telescope_config_main(
         name = telescope
 
     if isinstance(outpath,str):
-        print('String Bring Ling Ling')
         outpath = Path(outpath)
       
     outName = f"{name}_config.toml"
