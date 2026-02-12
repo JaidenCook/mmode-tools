@@ -49,7 +49,7 @@ def data_config_main(
     lmax_list: Annotated[list[int],typer.Option('--lmax-list','-l',help="NA")] = None,
     freq: Annotated[float,typer.Option('--freq','-f',help="NA")] = 150e6,
     verbose: Annotated[bool,typer.Option("-v",help="Verbose output.")] = False,
-    out_config: Annotated[str,typer.Option(help="")] = None):
+    out_config: Annotated[str,typer.Option("--outname",help="Output name")] = None):
     
     config_path = Path(config_path)
     data_path = Path(data_path)
@@ -104,16 +104,19 @@ def data_config_main(
                     dataFilePaths.append(str(data_path/data_files[ind]))
                     interferometerDict[telescope] = make_radio_array(config_path/config)
                     stokesList.append(pol)
-                    print(beamFringes[boolVec][0])
                     beamFringeFilePaths.append(str(beamFringes[boolVec][0]))
                     telescopes.append(telescope)
                     lMaxList.append(lmax_list[ind])
 
-    outName = ""
-    for telescope in np.unique(telescopes): outName += f"{telescope}_"
-    for pol in np.unique(stokesList): outName += f"{pol}_"
-    outName += f"{int(freq/1e6)}MHz_"
-    outName += "data-config.toml"
+    # Creating the output name.
+    if out_config is None:
+        outName = ""
+        for telescope in np.unique(telescopes): outName += f"{telescope}_"
+        for pol in np.unique(stokesList): outName += f"{pol}_"
+        outName += f"{int(freq/1e6)}MHz_"
+        outName += "data-config.toml"
+    else:
+        outName = out_config
 
     outFilePath = out_path / outName
 
