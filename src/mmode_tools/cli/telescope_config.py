@@ -30,10 +30,10 @@ helpList = ["File path to the array layout text file. Should be east, north, hei
 def telescope_config_main(
     array_layout: Annotated[str,typer.Argument(help=helpList[0])] = "",
     telescope: Annotated[str,typer.Option("--name",help=helpList[1])] = "",
-    lat: Annotated[float,typer.Option("-d",help=helpList[2])] = 0,
-    lon: Annotated[float,typer.Option("-r",help=helpList[3])] = 0,
-    outpath: Annotated[str,typer.Option("-o",help=helpList[4])] = defaultPath,
-    override: Annotated[bool,typer.Option("-O",help=helpList[5])] = False,
+    lat: Annotated[float,typer.Option("--lat","-d",help=helpList[2])] = 0,
+    lon: Annotated[float,typer.Option("--lon","-r",help=helpList[3])] = 0,
+    outpath: Annotated[str,typer.Option("--outpath","-o",help=helpList[4])] = defaultPath,
+    overwrite: Annotated[bool,typer.Option("--overwrite","-O",help=helpList[5])] = False,
     verbose: Annotated[bool,typer.Option("-v",help=helpList[6])] = False
 ):
     
@@ -65,12 +65,22 @@ def telescope_config_main(
         print(f"Latitude: {lat}")
         print(f"Longitude: {lon}")
         print(f"Your output directory is {outpath}")
-        print(f"Override existing file: {override}")
+        print(f"Override existing file: {overwrite}")
         print(f"Verbose: {verbose}")
         print(f"Output file path: {outFilePath}")
 
     # Writing the output configuration file.
-    make_config_file(outpath,arrayLocs=(east,north,height),LAT=lat,LON=lon,
-                     HEIGHT=None,antIDs=antIDs,telescope=name,
-                     arrayLayout=array_layout,verbose=True,
-                     outName=outName)
+    if os.path.exists(outpath):
+        print("Config file already exists...")
+        if overwrite:
+            print("Overwrting existing file...")
+            make_config_file(outpath,arrayLocs=(east,north,height),LAT=lat,
+                             LON=lon,HEIGHT=None,antIDs=antIDs,telescope=name,
+                             arrayLayout=array_layout,verbose=True,
+                             outName=outName)
+        else:
+            print("Overwrite condition False, exiting.")
+    else:
+        make_config_file(outpath,arrayLocs=(east,north,height),LAT=lat,
+                         LON=lon,HEIGHT=None,antIDs=antIDs,telescope=name,
+                         arrayLayout=array_layout,verbose=True,outName=outName)
