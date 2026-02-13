@@ -135,9 +135,9 @@ def bline2alm(baselines,beam,freq,lat,lMax,almCoeffsTensor=None):
     if returnCond:
         return almCoeffsTensor
 
-def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
+def bline2alm_h5py(blines,antPairs,beam,freq,lat,lMax,outFilePath=None,
                    chunks=False,compression="lzf",telescope=None,
-                   negModes=False,verbose=False):
+                   maxBaseline=None,negModes=False,verbose=False):
     """
     Function to generate the alm coefficient tensor given a set of baselines, 
     telescope primary beam and the required frequency. Uses a relatively slower 
@@ -145,6 +145,11 @@ def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
 
     Updated function for writing out the almCoeffsTensor to a hdf5 file. This 
     avoids the necessity of keeping a numpy array in memory.
+
+    TODO: It is possible to have baselines with l > lMax. In these cases, we 
+    can not properly expand the beam fringe coefficients if lMax < l. It is 
+    probably better to leave these as zeros in the array. It is also possible
+    that you might want to generate coeffs only up to lMax < l
 
     Parameters
     ----------
@@ -166,11 +171,28 @@ def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
     None
     """
 
-    #
-    Ncells = int(2*lMax+2)
+    # Calculating the wavelength.
     lam = c/freq
-    Nbase = baselines.shape[0]
+    Nbase = blines.shape[0] # Number of baselines.
+    lMax = int(lMax)
+
+    # Determining the maximum l from max baseline length.
+    if maxBaseline is not None:
+        lblineMax = int(2*np.pi*maxBaseline/lam)
+    else:
+        lblineMax = lMax
+
+    # The Ncells should match the number 
+    if lMax > lblineMax:
+        msg = f"Input lMax {lMax} > theoretical max {lblineMax}."
+        warnings.warn(msg)
+        Ncells = int(2*lMax+2)
+    else:
+        Ncells = int(2*lblineMax+2)
+
+    # Generating the lmn grid.
     lmnGrid = gen_lmn(lat,Ncells)
+    
     # baselines * l * m
     if negModes:
         almShape = (Nbase,2,lMax+1,lMax+1)
@@ -192,44 +214,46 @@ def bline2alm_h5py(baselines,antPairs,beam,freq,lat,lMax,outFilePath=None,
             outName += f".hdf5" 
         outFilePath = beamFringePath+outName
 
-    hf = h5.File(outFilePath,'w')
-    g = hf.create_group('data')
-    if chunks:
-        print(f"Chunking set to true... Using compression {compression}...")
-        chunk = (1,lMax+1,1)
-        almCoeffsTensor = g.create_dataset('almCoeffTensor',almShape,
-                                        dtype=np.complex64,chunks=chunk,
-                                        compression=compression)
-    else:
-        almCoeffsTensor = g.create_dataset('almCoeffTensor',almShape,
-                                        dtype=np.complex64)
-    g.create_dataset('antPairs',data=antPairs)
-    g.create_dataset('blineID',data=np.arange(Nbase))
-
-    for blineInd in tqdm(range(Nbase)): 
-        fringeMap = np.exp(-2j*np.pi*np.einsum('ijk,i->jk',lmnGrid, 
-                                                baselines[blineInd,:], 
-                                                optimize='greedy')/lam)
-        beamFringeMap = np.einsum('ij,ij->ij',beam,fringeMap, 
-                                    optimize='greedy')
-        beamFringeGrid = pyshtools.SHGrid.from_array((beamFringeMap))
-        alm = beamFringeGrid.expand(normalization='ortho',csphase=-1,
-                                 lmax_calc=int(lMax),backend='ducc')
-        
-        # We only care about the positive (or the negative) m-modes. However,
-        # we include an option to save the negative modes as well. Note this
-        # doubles the memory requirement.
-        if negModes:
-            almCoeffsTensor[blineInd,:,:,:] = alm.coeffs
+    with h5.File(outFilePath,'w') as hf:
+        #
+        g = hf.create_group('data')
+        if chunks:
+            print(f"Chunking set to true... Using compression {compression}...")
+            chunk = (1,lMax+1,1)
+            almCoeffsTensor = g.create_dataset('almCoeffTensor',almShape,
+                                            dtype=np.complex64,chunks=chunk,
+                                            compression=compression)
         else:
-            almCoeffsTensor[blineInd,:,:] = alm.coeffs[0,:,:]
+            almCoeffsTensor = g.create_dataset('almCoeffTensor',almShape,
+                                            dtype=np.complex64)
+        g.create_dataset('antPairs',data=antPairs)
+        g.create_dataset('blineID',data=np.arange(Nbase))
 
-    g.attrs['lMax'] = lMax
-    g.attrs['Ncell'] = Ncells
-    g.attrs['timestamp'] = str(datetime.datetime.now())
-    g.attrs['negModes'] = negModes
+        # Looping through the baselines.
+        for blineInd in tqdm(range(Nbase)): 
+            fringeMap = np.exp(-2j*np.pi*np.einsum('ijk,i->jk',lmnGrid, 
+                                                    blines[blineInd,:], 
+                                                    optimize='greedy')/lam)
+            beamFringeMap = np.einsum('ij,ij->ij',beam,fringeMap,
+                                      optimize='greedy')
+            beamFringeGrid = pyshtools.SHGrid.from_array((beamFringeMap))
+            alm = beamFringeGrid.expand(normalization='ortho',csphase=-1,
+                                    lmax_calc=lMax,backend='ducc')
+            
+            # We only care about the positive (or the negative) m-modes. However,
+            # we include an option to save the negative modes as well. Note this
+            # doubles the memory requirement.
+            if negModes:
+                almCoeffsTensor[blineInd,:,:,:] = alm.coeffs
+            else:
+                almCoeffsTensor[blineInd,:,:] = alm.coeffs[0,:,:]
 
-    hf.close()
+        g.attrs['lMax'] = lMax
+        g.attrs['Ncell'] = Ncells
+        g.attrs['timestamp'] = str(datetime.datetime.now())
+        g.attrs['negModes'] = negModes
+
+    
     if verbose:
         print(f"Negative m-modes saved.")
         print(f"File saved to {outFilePath}")
