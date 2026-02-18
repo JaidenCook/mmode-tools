@@ -124,6 +124,11 @@ def point_mod(interferometer,lam,lMod,mMod,nMod,Sapp,verbose=False):
     VisCovTensor : numpy np.ndarray, np.complex64
         Visibility model covariance tensor [Nlst,Nant,Nant].
     """
+    if isinstance(Sapp,(int,float)):
+        Sapp = Sapp*np.ones(lMod.size)
+    elif isinstance(Sapp,np.ndarray):
+        if Sapp.size != lMod.size:
+            raise ValueError("Sapp should be a scalar or a vector of the same size as lMod.")
     
     if np.any(np.isnan(lMod)):
         # If there are any nonsense values then set the l,m,n values to 0,
