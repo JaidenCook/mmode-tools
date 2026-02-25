@@ -14,11 +14,12 @@ from mmode_tools.constants import c,MRO
 
 configFile = "default_config.toml"
 mmodeConfigPath = "mmode_tools.config"
+dataPath = resources.files('mmode_tools.data')
 
 with resources.files(mmodeConfigPath).joinpath(configFile).open("r") as f:
     paths = toml.load(f).get("files", {})
-    MWA_BEAM_FILE = paths["MWA_BEAM_FILE"]
-
+    #MWA_BEAM_FILE = paths["MWA_BEAM_FILE"]
+    MWA_BEAM_FILE = dataPath.joinpath(paths["MWA_BEAM_FILE"])
 
 def radec2azel(ra,dec,lat):
     """
