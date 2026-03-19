@@ -52,7 +52,7 @@ def vis2mmode_DFT(covTensor,lstVec,goodInds,Ncells,rMatrix=None,IDFT=True,
                                      IDFT_matrix,optimize="optimal")/len(lvec)
     
     # Setting all visibility values greater than the associated lMax to zero.
-    if np.any(rMatrix):
+    if rMatrix is not None:
         # Assume that rMatrix has the same shape as mmodeTensor.
         # Assume that the units of rMatrix are in wavelengths.
         lMaxMatrix = (2*np.pi*rMatrix).astype(int) + 1
