@@ -7,9 +7,10 @@ import matplotlib
 from matplotlib.colors import AsinhNorm,Normalize,LogNorm
 import cmasher as cmr
 
-def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
-                          scale='linear',title=None,xlim=None,ylim=None,
-                          plotReal=False,plotImag=False,plotAmp=False):
+def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer=None,
+                          figaxs=None,scale='linear',title=None,xlim=None,ylim=None,
+                          plotReal=False,plotImag=False,plotAmp=False,
+                          label=None,color=None,lw=None,ls=None):
     """
     Plots the visibility fringes for a given baseline over as a function of
     LST.
@@ -23,7 +24,7 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
     antPair : tuple
         Tuple of antenna indices (ant1,ant2).
     interferometer : Interferometer object
-        RadioArray object containing baseline information.ß
+        RadioArray object containing baseline information.
     figaxs : tuple, optional
         Tuple of (figure,axes) to plot on. If None, a new figure and axes are created.
     scale : str, optional
@@ -48,14 +49,26 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
     antInd1,antInd2 = antPair
     #
     if plotReal:
+        if color is None:
+            color='tab:red'
+        if label is None:
+            label='Real'
         axs.plot(lstVec,covTensor[:,antInd1,antInd2].real,
-                 label='Real',color='tab:red')
+                 label=label,color=color)
     elif plotImag:
-        axs.plot(lstVec,covTensor[:,antInd1,antInd2].imag,label='Imaginary',
-             color='tab:blue')
+        if color is None:
+            color='tab:blue'
+        if label is None:
+            label='Imaginary'
+        axs.plot(lstVec,covTensor[:,antInd1,antInd2].imag,label=label,
+             color=color)
     elif plotAmp:
-        axs.plot(lstVec,np.abs(covTensor[:,antInd1,antInd2]),color='k',
-                 zorder=1e3,label='Amplitude',linewidth=3,alpha=0.5)
+        if color is None:
+            color='k'
+        if label is None:
+            label='Amplitude'
+        axs.plot(lstVec,np.abs(covTensor[:,antInd1,antInd2]),color=color,
+                 zorder=1e3,label=label,linewidth=3,alpha=0.5)
     
     if not(plotReal) and not(plotImag) and not(plotAmp):
         axs.plot(lstVec,np.abs(covTensor[:,antInd1,antInd2]),color='k',
@@ -67,7 +80,7 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer,figaxs=None,
 
     axs.set_xlabel('LST [hours]',fontsize=20)
     axs.set_ylabel('Amplitude',fontsize=20)
-    if title is None:
+    if title is None and interferometer is not None:
         rbase = np.sqrt(interferometer.uu_m[antInd1,antInd2]**2 + \
                         interferometer.vv_m[antInd1,antInd2]**2)
         title = f'Data: u={interferometer.uu_m[antInd1,antInd2]:5.3f}'+\
