@@ -264,19 +264,23 @@ def MWA_beam_calc(freq,Az,Alt,pol='X',tgpsVec=None,dipoleInd=10,
         Array of beam values for the associated az and alt values.
     """
 
-    if degrees:
+    if degrees and tgpsVec is None:
         Az = np.radians(Az)
         Alt = np.radians(Alt)
     
-    if np.any(tgpsVec):
+    if tgpsVec is not None:
         # If tgpsvec given then alt and az are interpretted as ra and dec.
         # Calculate the Alt and Az for a given time series.
         from astropy.time import Time
         from astropy.coordinates import AltAz,SkyCoord
         from astropy import units as u
-
+        
         t = Time(tgpsVec,format="gps",scale="ut1")
-        sky_posn = SkyCoord(Az*u.deg,Alt*u.deg)
+        if degrees:
+            sky_posn = SkyCoord(Az*u.deg,Alt*u.deg)
+        else:
+            sky_posn = SkyCoord(Az*u.rad,Alt*u.rad)
+        
         altaz = sky_posn.transform_to(AltAz(obstime=t,location=MRO))
 
         Alt,Az = np.radians(altaz.alt.deg),np.radians(altaz.az.deg)
