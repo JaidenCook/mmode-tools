@@ -873,6 +873,51 @@ class SkyMap:
 
         if grid:
             axs.grid(ls='-.',alpha=0.25,color='k')
+    
+    def get_cutout(self,pointCoord,size=100,useRadec=False):
+        """get_cutout Extract a rectangular cutout from the sky map.
+
+        Parameters
+        ----------
+        pointCoord : tuple
+            If useRadec is False, pixel indices (xind, yind).
+            If useRadec is True, sky coordinates (RA, DEC) in degrees.
+        size : int or float, optional
+            If useRadec is False, size of the cutout in pixels, by default 100.
+            If useRadec is True, size of the cutout in degrees, by default 100.
+        useRadec : bool, optional
+            If True, pointCoord is interpreted as (RA, DEC) in degrees and
+            size is in degrees. The grid vectors raVec and decVec are used to
+            locate the nearest pixel. By default False.
+
+        Returns
+        -------
+        np.ndarray
+            2D cutout array from skyMap.
+        """
+        if self.skyMap is None:
+            self.expand_coeffs()
+
+        if useRadec:
+            size = 1 #deg
+            ra,dec = pointCoord
+
+            # Finding the nearest pixel indices for the given RA and DEC.
+            xind = int(np.argmin(np.abs(self.raVec - ra)))
+            yind = int(np.argmin(np.abs(self.decVec - dec)))
+
+            # Converting the window size from degrees to pixels.
+            Ncells = self.coeffs.shape[1]*4 + 1
+            halfX = int(size/(360/Ncells))//2
+            halfY = int(size/(180/(Ncells//2)))//2
+        else:
+            xind,yind = pointCoord
+            halfX = size//2
+            halfY = size//2
+
+        cutout = self.skyMap[yind-halfY:yind+halfY,xind-halfX:xind+halfX]
+
+        return cutout
 
 
 def convolve_model_map(model,weightsTensor,expandMap=True,lMax=None):
