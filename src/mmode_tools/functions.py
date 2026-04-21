@@ -1,25 +1,37 @@
 import numpy as np
 
-def Gaussian2Dxy(xdata_tuple,amplitude,x0,y0,sigma_x,sigma_y):
+def Gaussian2Dxy(xdata_tuple,amplitude,x0,y0,amaj,bmin,theta):
     """
-    Generalised 2DGaussian function. This 2D Gaussian is fixed to the xy axis,
-    rotation is not possible.
-    
-    Parameters:
-    ----------
-    xdata_Tuple : tuple
-        Tuple containing the X-data and Y-data arrays.
-    params : tuple
-        Params.
-            
-    Returns:
-    ----------
-    g : numpy array
-        2D numpy array, the N_Gaussian image.
-    """
-    (x,y) = xdata_tuple
-    x0 = float(x0)
-    y0 = float(y0)
-    g = amplitude*np.exp(-0.5*(((x-x0)/sigma_x)**2 + ((y-y0)/sigma_y)**2))
+    Generates 2D Gaussian array.
 
-    return g
+    Parameters
+    ----------
+    x : numpy array, float
+        2D cartesian or azimuth numpy array. [rad]
+    y : numpy array, float
+        2D cartesian or zenith numpy array. [rad]
+    x0 : numpy array, float
+        Cartesian or Azimuth angle of the Gaussian centre. [rad]
+    y0 : numpy array, float
+        Cartesian or Zenith angle of the centre of the Gaussian. [rad]
+    amaj : numpy array, float
+        Gaussian major axis. [deg]
+    bmin : numpy array, float
+        Gaussian minor axis. [deg]
+    theta : numpy array, float
+        Gaussian position angle. [rad]
+
+    Returns
+    -------
+    2D Gaussian array.
+    """
+    (X,Y) = xdata_tuple
+    # Defining the width of the Gaussians
+    sigx = amaj/(2.0*np.sqrt(2.0*np.log(2.0)))
+    sigy = bmin/(2.0*np.sqrt(2.0*np.log(2.0)))
+
+    a = (np.cos(theta)**2)/(2.0*sigx**2) + (np.sin(theta)**2)/(2.0*sigy**2)
+    b = -np.sin(2.0*theta)/(4.0*sigx**2) + np.sin(2.0*theta)/(4.0*sigy**2)    
+    c = (np.sin(theta)**2)/(2.0*sigx**2) + (np.cos(theta)**2)/(2.0*sigy**2)
+        
+    return amplitude*np.exp(-(a*(X-x0)**2 + 2*b*(X-x0)*(Y-y0) + c*(Y-y0)**2))
