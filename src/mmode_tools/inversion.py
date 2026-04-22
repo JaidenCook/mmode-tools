@@ -565,12 +565,17 @@ def filter_coefficients(coeffs,lmax=200,lcut=130,lwin=None,
         Spherical harmonic degree of maximum sensitivity.
     lwin : int, default=None
         Window length of taper. Default is lmax-lcut.
+    filterType : str, default='blackmanharris'
+        Type of filter to apply. Options are 'blackmanharris' or 'ones'. In 
+        future we will upgrade this to be any of the optional scipy signal 
+        window types.
     
     Returns
     -------
     None
     """
     ### TODO: Add in more filter types.
+    from scipy.signal.windows import blackmanharris,gaussian
     N = coeffs.shape[1]
     filterVec = np.ones(N)
     
@@ -578,23 +583,28 @@ def filter_coefficients(coeffs,lmax=200,lcut=130,lwin=None,
         errMsg = f"lcut > lmax, should strictly be less."
         raise ValueError(errMsg)
     
-    if (filterType != 'blackmanharris') and (filterType != 'ones'):
-        raise ValueError(f"Filter type {filterType} not implemented, only " +\
-                         "blackmanharris or ones is available.")
-    elif filterType == 'blackmanharris':
-        from scipy.signal.windows import blackmanharris
-
+    if filterType == 'blackmanharris':
         if (lwin == None) or (lwin > int(lmax-lcut)):
             lwin = int(lmax-lcut)
         
         filterFunc = blackmanharris
         filterVec[lcut+1:lcut+1+lwin] *= filterFunc(2*lwin)[-lwin:]
+        filterVec[lcut+1+lwin:] = filterFunc(2*lwin)[-1] 
         filterVec[lcut+1+lwin:] = 0
-        
+    elif filterType == 'gaussian':
+        if lwin == None:
+            lwin = int(lmax-lcut)
+        filterFunc = gaussian
+        filterVec[lcut+1:lcut+1+lwin] *= filterFunc(2*lwin, std=lwin/2)[-lwin:]
+        filterVec[lcut+1+lwin:] = filterFunc(2*lwin, std=lwin/2)[-1]
+        filterVec[lcut+1+lwin:] = 0
     elif filterType == 'ones':
         # This is a basic filter that just sets all coeffs above an lmax to 
         # zero.
         filterVec[lmax+1:] = 0
+    else:
+        raise ValueError(f"Filter type {filterType} not implemented, only " +\
+                         "blackmanharris or ones is available.")
 
     
     # Apply the filter to all coefficients.
