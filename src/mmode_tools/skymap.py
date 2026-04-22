@@ -899,7 +899,7 @@ class SkyMap:
             self.expand_coeffs()
 
         if useRadec:
-            size = 1 #deg
+            if size > 90:size = 1 #deg
             ra,dec = pointCoord
 
             # Finding the nearest pixel indices for the given RA and DEC.
@@ -910,6 +910,8 @@ class SkyMap:
             Ncells = self.coeffs.shape[1]*4 + 1
             halfX = int(size/(360/Ncells))//2
             halfY = int(size/(180/(Ncells//2)))//2
+
+            print(xind,yind,halfX,halfY)
         else:
             xind,yind = pointCoord
             halfX = size//2
@@ -919,6 +921,95 @@ class SkyMap:
 
         return cutout
 
+    def fit_point_src(self,srcCoords,size=20,verbose=False):
+
+        from mmode_tools.functions import Gaussian2Dxy
+        from scipy.optimize import curve_fit
+        from scipy.stats import iqr
+
+        data = self.get_cutout(srcCoords,size=size).astype(np.float32)
+        xx,yy = np.meshgrid(np.arange(data.shape[0]),
+                            np.arange(data.shape[1]))
+
+        rms = iqr(data)/1.35
+        peak = np.max(data)
+
+
+        # Roughly 2-sigma condition.
+        #boolVec = data/peak >= 0.01
+        boolVec = data/rms >= 1
+
+        if verbose:
+            print(f"RMS = {rms:5.3f}, Peak = {peak:5.3f}, SNR = {peak/rms:5.3f}")
+            print(f"Fitting to {boolVec.sum()} pixels.")
+
+        ep = 1e-6 # Effectively fix parameter value.
+        lowBound = [1-ep,0,0,0,0,0]
+        upBound = [1+ep,size,size,size,size,np.pi/2]
+        # Perform the fitting.
+        #139.98546016756828
+
+        popt,_ = curve_fit(Gaussian2Dxy,(xx[boolVec],yy[boolVec]),
+                           data[boolVec]/peak,p0=[1,size//2,size//2,1,1,0],
+                           bounds=(lowBound,upBound),
+                           sigma=rms*np.ones(xx[boolVec].size))
+        # Getting the fitted parameters.
+        amp = popt[0] 
+        amaj = popt[3]
+        bmin = popt[4]
+        PA = popt[5]
+    
+        #if bmin > amaj:
+            # If the fitted bmin is greater than amaj, we need to swap these and
+            # add 90 degrees to the PA.
+            #amaj,bmin = bmin,amaj
+            #PA += np.pi/2
+            #PA -= np.pi/2
+
+        if verbose:
+            print(f"Fitted parameters: amp = {amp:5.3f}, amaj = {amaj:5.3f}, " +
+                  f"bmin = {bmin:5.3f}, PA = {PA:5.3f}, x0 = {popt[1]:5.3f}, " +
+                  f"y0 = {popt[2]:5.3f}")
+
+        gaussParams = (amp,amaj,bmin,PA)
+
+        return gaussParams
+    
+    def filter_coeffs(self,filterType='blackmanharris',lMax=None,lwin=None,
+                      lcut=None):
+        """filter_coeffs _summary_
+
+        Parameters
+        ----------
+        filterType : str, optional
+            _description_, by default 'blackmanharris'
+        lMax : _type_, optional
+            _description_, by default None
+        lwin : _type_, optional
+            _description_, by default None
+        lcut : _type_, optional
+            _description_, by default None
+        """
+        from mmode_tools.inversion import filter_coefficients
+                        
+        # Performing check on new lMax input.            
+        lMax = self.lmax_check(lMax=lMax)
+
+        if lwin is None and lcut is None:
+            lwin = int(lMax/10)
+            lcut = lMax - lwin
+        elif lwin is None and lcut is not None:
+            lwin = lMax-int(lcut)
+        elif lwin is not None and lcut is None:
+            lcut = lMax - int(lwin)
+
+        filter_coefficients(self.coeffs,filterType=filterType,
+                            lmax=lMax,lwin=lwin,lcut=lcut)
+        
+        # Recreate the sky map after filtering the coefficients.
+        self.expand_coeffs(lMax=lMax)
+
+        
 
 def convolve_model_map(model,weightsTensor,expandMap=True,lMax=None):
     """convolve_model_map _summary_
