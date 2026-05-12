@@ -92,7 +92,7 @@ helpList = ["Data configuration file, should be .toml.",
 def fit_map_main(
     config_file: Annotated[str,typer.Argument(help=helpList[0])] = "",
     lmax: Annotated[Optional[List[int]],typer.Option("--lmax","-l",help=helpList[1])] = [130],
-    damp: Annotated[float,typer.Option("--damp","-d",help=helpList[2])] = 0.01,
+    damp: Annotated[float,typer.Option("--damp","-d",help=helpList[2])] = None,
     inpath: Annotated[str,typer.Option("--inpath","-i",help=helpList[3])] = defaultInPath,
     outpath: Annotated[str,typer.Option("--outpath","-O",help=helpList[4])] = defaultOutPath,
     outname: Annotated[str,typer.Option("--outname","-o",help=helpList[5])] = None,
@@ -181,6 +181,7 @@ def fit_map_main(
         print(f"lMaxVec: {lMaxVec}")
         print(f"freq: {freq} [MHz]")
         print(f"weightsCond: {weightsCond}")
+        print(f"FisherCond: {calc_fisher}")
         print(f"Verbose: {verbose}")
         print(f"Plot: {plot}")
         print_full_line(character='=')
@@ -207,10 +208,13 @@ def fit_map_main(
         else:
             noiseVec = 1/weights
             noiseVec[weights==0] = 0
-        damp = calc_fisher_coeffs(almTensorList,noiseVec,lMax=lMax,
+        FI = calc_fisher_coeffs(almTensorList,noiseVec,lMax=lMax,
                                   lMaxVec=lMaxVec,absOffset=1e-1)
         # Only need the positive m-mode regularisation parameters.
-        damp = damp[0,:lMax+1,:lMax+1]
+        if damp is None:
+            damp = 1
+        # For general Tik, the damp coefficient can be applied to the FI matrix.
+        damp = FI[0,:lMax+1,:lMax+1]*damp
     #
     if verbose:
         verbosity = 10
@@ -218,6 +222,10 @@ def fit_map_main(
         print_full_line(character='=')
     else:
         verbosity = 0
+    
+    # If damp is None set to 0.01
+    if damp is None:
+        damp = 0.01
     # Perform the inversion, return the CAR map and the coefficients.
     skyMap,skyCo = data2map(mmodeTensor,almTensorList,weights,
                             invert=invert_tikh_multi_assym,lMax=lMax,
