@@ -1,6 +1,10 @@
+from mmode_tools.beam import MWA_beam_calc, MWA_dipolebeam, MWA_dipolebeam
 import numpy as np
 from numpy import exp,pi
 from mmode_tools.constants import c,MRO
+from astropy.time import Time
+from astropy.coordinates import AltAz, SkyCoord, EarthLocation
+from astropy import units as u
 
 def calc_lmn(altVec,azVec,degrees=True):
     """
@@ -82,7 +86,8 @@ def radec2lmn(tgpsVec,ra,dec,location=MRO,nan_below_horizon=True):
                 print(dec)
                 raise TypeError("dec should be float or np.float64 dtype.")
 
-    t = Time(tgpsVec,format="gps",scale="ut1")
+    #t = Time(tgpsVec,format="gps",scale="ut1")
+    t = Time(tgpsVec,format="gps",scale="utc")
     sky_posn = SkyCoord(ra*u.deg,dec*u.deg)
     altaz = sky_posn.transform_to(AltAz(obstime=t,location=location))
 
@@ -134,7 +139,8 @@ def point_mod(interferometer,lam,lMod,mMod,nMod,Sapp,verbose=False):
     #
     uu_lmod = interferometer.uu_m[None,:,:]*lMod[:,None,None]/lam
     vv_mmod = interferometer.vv_m[None,:,:]*mMod[:,None,None]/lam
-    ww_nmod = interferometer.ww_m[None,:,:]*(nMod[:,None,None]-1)/lam
+    ww_nmod = interferometer.ww_m[None,:,:]*nMod[:,None,None]/lam
+    #ww_nmod = interferometer.ww_m[None,:,:]*(nMod[:,None,None]-1)/lam
 
     if verbose:
         print(uu_lmod.shape)
@@ -142,12 +148,13 @@ def point_mod(interferometer,lam,lMod,mMod,nMod,Sapp,verbose=False):
         print(ww_nmod.shape)
 
     VisCovTensor = Sapp[:,None,None]*exp(-2*pi*1j*(uu_lmod+vv_mmod+ww_nmod))
+    #VisCovTensor = Sapp[:,None,None]*exp(-2*pi*1j*(uu_lmod+vv_mmod))
 
     return VisCovTensor
 
 
 
-def point_mod2(interferometer,tgpsVec,freq,raSrc,decSrc,srcFlux,
+def point_mod2(interferometer,tgpsVec,freq,raSrc,decSrc,srcFlux,pol='X',
               beamFilePath=None,verbose=False):
     """
     Takes input point source l, m and n values (as a function of LST), as well 
@@ -158,16 +165,16 @@ def point_mod2(interferometer,tgpsVec,freq,raSrc,decSrc,srcFlux,
     ----------
     Array : mmod_tools.RadioArray object
         Array for the observations, used to calculate the phases.
-    lam : float
-        Wavelength in m, of the observation.
-    lMod : numpy np.ndarray, float
-        Vector of model direction cosine l values.
-    mMod : numpy np.ndarray, float
-        Vector of model direction cosine m values.
-    nMod : numpy np.ndarray, float
-        Vector of model direction cosine n values.
-    Sapp : numpy np.ndarray, float
-        Vector of apparent model flux density values.
+    tgpsVec : numpy np.ndarray, float
+        Vector of UTC times in GPS format, for each covariance slice.
+    freq : float
+        Frequency of the observation in Hz.
+    raSrc : float
+        Right ascension of the source in degrees.
+    decSrc : float
+        Declination of the source in degrees.
+    srcFlux : float
+        Flux density of the source.
 
     Returns
     -------
@@ -189,8 +196,15 @@ def point_mod2(interferometer,tgpsVec,freq,raSrc,decSrc,srcFlux,
                                nan_below_horizon=False)
 
     # Calculating the apparent source brightness.
-    beamVals = beam_vec_calc(interferometer,raSrc,decSrc,tgpsVec,
-                             beamFilePath=beamFilePath)
+    if (beamFilePath is not None) and beamFilePath != "MWA":
+        beamVals = beam_vec_calc(interferometer,raSrc,decSrc,tgpsVec)
+    elif beamFilePath is None:
+        beamVals = np.ones(tgpsVec.size)
+    elif beamFilePath == "MWA":
+        #freq,Az,Alt,pol='X',tgpsVec=None
+        beamVals = MWA_beam_calc(freq,raSrc,decSrc,pol=pol,tgpsVec=tgpsVec,
+                                 normalise=False)
+
     if isinstance(srcFlux,(int,float)):
         srcFlux = srcFlux*np.ones(tgpsVec.size)
     srcFlux = srcFlux*beamVals
@@ -204,6 +218,7 @@ def point_mod2(interferometer,tgpsVec,freq,raSrc,decSrc,srcFlux,
     #
     uu_lmod = interferometer.uu_m[None,:,:]*lVec[:,None,None]/lam
     vv_mmod = interferometer.vv_m[None,:,:]*mVec[:,None,None]/lam
+    #ww_nmod = interferometer.ww_m[None,:,:]*nVec[:,None,None]/lam
     ww_nmod = interferometer.ww_m[None,:,:]*(nVec[:,None,None]-1)/lam
 
     phaseTerm = -2*np.pi*1j*(uu_lmod+vv_mmod+ww_nmod)
@@ -297,7 +312,7 @@ def phase_back_rot_tensor(Array,lam,lMod,mMod,nMod):
 
     return phaseTensor
 
-def get_sun_lst_range(tgpsVec,verbose=False,returnAltAz=False):
+def get_sun_lst_range(tgpsVec,verbose=False,returnAltAz=False,location=None):
     """
     Function which returns the lst values of the sun.
     
@@ -318,7 +333,8 @@ def get_sun_lst_range(tgpsVec,verbose=False,returnAltAz=False):
 
     t = Time(tgpsVec,format="gps",scale="ut1")
     sunpos = astropy.coordinates.get_sun(t)
-    location = EarthLocation.of_site('MWA')
+    if location is None:
+        location = EarthLocation.of_site('MWA')
     sunelaz = sunpos.transform_to(AltAz(obstime=t,location=location))
 
     sunInds = (sunelaz.alt.degree > 0.)
