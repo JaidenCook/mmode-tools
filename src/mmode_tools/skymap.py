@@ -245,7 +245,7 @@ class SkyMap:
             self.expand_coeffs()
 
     #   
-    def expand_coeffs(self,lMax=None,galactic=False):
+    def expand_coeffs(self,lMax=None,galactic=False,returnMap=False):
         """expand_coeffs creates the cartesian map from the spherical harmonic
         coefficients using the pyshtools package.
 
@@ -266,10 +266,14 @@ class SkyMap:
                                             csphase=-1)
         # Performing check on new lMax input.            
         lMax = self.lmax_check(lMax=lMax)
-
         if galactic:
-            self.skyMapGalactic = coeffsObj.expand(grid='DH2',backend='ducc',
-                                                   lmax=lMax).data.real
+            if returnMap:
+                self.skyMapGalactic = coeffsObj.expand(grid='DH2',
+                                                       backend='ducc',
+                                                       lmax=lMax).data.real
+            else:
+                return coeffsObj.expand(grid='DH2',backend='ducc',
+                                        lmax=lMax).data.real
         else:
             # Setting the colat, colon, RA and DEC grid vectors:
             self.colat = 90-coeffsObj.expand(grid='DH2',backend='ducc',
@@ -281,8 +285,12 @@ class SkyMap:
             self.decVec = coeffsObj.expand(grid='DH2',backend='ducc',
                                                    lmax=lMax).lats()[::-1]
             self.raVec = np.roll(self.raVec,int(self.raVec.size/2))
-            self.skyMap = coeffsObj.expand(grid='DH2',backend='ducc',
+            if returnMap:
+                return coeffsObj.expand(grid='DH2',backend='ducc',
                                            lmax=lMax).data.real
+            else:
+                self.skyMap = coeffsObj.expand(grid='DH2',backend='ducc',
+                                            lmax=lMax).data.real
 
 
     def calc_power_spectrum(self,lMax=None,unit='per_l'):
@@ -695,8 +703,11 @@ class SkyMap:
         import matplotlib.patches as patches
 
         # Performing check on new lMax input.            
+        if lMax is not None:
+            lMax = self.lmax_check(lMax=lMax)
+            img = self.expand_coeffs(lMax=lMax,returnMap=True)
+        
         lMax = self.lmax_check(lMax=lMax)
-
 
         if self.skyMap is None and img is None:
             self.expand_coeffs(lMax=lMax)
