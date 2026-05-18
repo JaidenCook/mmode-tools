@@ -1,3 +1,9 @@
+__author__ = "Jaiden Cook"
+__credits__ = ["Jaiden Cook"]
+__version__ = "1.0"
+__maintainer__ = "Jaiden Cook"
+__email__ = "Jaiden.Cook1@gmail.com"
+
 import numpy as np
 import astropy.io.fits as fits
 from mmode_tools.beam import radec2azel

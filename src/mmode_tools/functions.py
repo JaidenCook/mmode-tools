@@ -1,3 +1,9 @@
+__author__ = "Jaiden Cook"
+__credits__ = ["Jaiden Cook"]
+__version__ = "1.0"
+__maintainer__ = "Jaiden Cook"
+__email__ = "Jaiden.Cook1@gmail.com"
+
 import numpy as np
 
 def Gaussian2Dxy(xdata_tuple,amplitude,x0,y0,amaj,bmin,theta,

@@ -1,3 +1,9 @@
+__author__ = "Jaiden Cook"
+__credits__ = ["Jaiden Cook"]
+__version__ = "1.0"
+__maintainer__ = "Jaiden Cook"
+__email__ = "Jaiden.Cook1@gmail.com"
+
 from mmode_tools.beam import MWA_beam_calc, MWA_dipolebeam, MWA_dipolebeam
 import numpy as np
 from numpy import exp,pi
