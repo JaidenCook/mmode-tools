@@ -1,3 +1,9 @@
+__author__ = "Jaiden Cook"
+__credits__ = ["Jaiden Cook"]
+__version__ = "1.0"
+__maintainer__ = "Jaiden Cook"
+__email__ = "Jaiden.Cook1@gmail.com"
+
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -768,7 +774,8 @@ class SkyMap:
                             vmin=None,linear_width=None,projection='mollweide',
                             cmap='twilight_shifted',shading='gouraud',grid=True,
                             fontsize=20,ticks=True,figaxs=None,xticks=False,
-                            title=None,transparent=False):
+                            title=None,transparent=False,
+                            contour_kwargs=None):
         """plot_equatorial_map _summary_
 
         Parameters
@@ -809,6 +816,20 @@ class SkyMap:
             _description_, by default None
         transparent : bool, optional
             _description_, by default False
+        contour_kwargs : dict, optional
+            Dictionary of options controlling the contours. Recognised keys are:
+
+            * ``pmin`` (float) – minimum contour level as a percentage of the
+              reference value, by default ``-100``.
+            * ``pmax`` (float) – maximum contour level as a percentage of the
+              reference value, by default ``100``.
+            * ``nlevels`` (int) – number of contour levels, by default ``6``.
+            * ``ref`` (float or None) – reference value used to convert
+              percentages to absolute levels.  If ``None`` the maximum of
+              ``abs(img)`` is used, by default ``None``.
+
+            Any remaining keys are forwarded directly to
+            ``matplotlib.axes.Axes.contour``.
         """
         # Get the normalisation.
         from matplotlib.colors import AsinhNorm
@@ -865,6 +886,17 @@ class SkyMap:
                                 shading=shading,norm=norm)
         else:
             return None
+
+        if contour_kwargs is not None:
+            _ckw = dict(contour_kwargs)
+            _pmin = _ckw.pop('pmin', -100)
+            _pmax = _ckw.pop('pmax', 100)
+            _nlevels = _ckw.pop('nlevels', 6)
+            _ref = _ckw.pop('ref', None)
+            if _ref is None:
+                _ref = np.nanmax(np.abs(img))
+            levels = np.linspace(_pmin / 100, _pmax / 100, _nlevels) * _ref
+            axs.contour(lon, lat, img[:, ::-1], levels=levels, **_ckw)
 
         if ticks:
             cb = fig.colorbar(im,location='bottom',fraction=0.046, pad=0.04)
