@@ -1,3 +1,9 @@
+__author__ = "Jaiden Cook"
+__credits__ = ["Jaiden Cook"]
+__version__ = "1.0"
+__maintainer__ = "Jaiden Cook"
+__email__ = "Jaiden.Cook1@gmail.com"
+
 import numpy as np
 import matplotlib.pyplot as plt
 import sys,os
@@ -203,9 +209,16 @@ def write_flags(hf,flagMatrix,flagBlines=None,
     
     Nant = flagMatrix.shape[0]
 
-    # Getting the flag indices, so we can get the flag antenna IDs.
-    flagInds = np.arange(Nant)[np.diag(flagMatrix)==False]
-    goodInds = np.arange(Nant)[np.diag(flagMatrix)]
+    if np.any(np.diag(flagMatrix)) == False:
+        # In this case the autos are flagged and we can't use the diagonals
+        # to determine the flagged indices.
+        Nant = flagMatrix.shape[0]
+        goodInds = np.unique(np.mgrid[0:Nant,0:Nant][0][flagMatrix])
+        flagInds = np.delete(np.arange(Nant),goodInds)
+    else:
+        # Getting the flag indices, so we can get the flag antenna IDs.
+        flagInds = np.arange(Nant)[np.diag(flagMatrix)==False]
+        goodInds = np.arange(Nant)[np.diag(flagMatrix)]
     
     if plotFlags:
         plt.imshow(flagMatrix,interpolation='None')
@@ -329,6 +342,8 @@ def update_flags(badAnts,filepath,Interferometer,flagBlines=None,clearFlags=Fals
     if clearFlags:
         # If True clear existing flags and replace with new flags.
         newFlagInds = np.unique(badAntInds)
+        if verbose:
+            print(newFlagInds)
     else:
         _,flagInds,_,flagBlinesOld = read_flags(filepath)
 

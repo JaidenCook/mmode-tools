@@ -1,3 +1,9 @@
+__author__ = "Jaiden Cook"
+__credits__ = ["Jaiden Cook"]
+__version__ = "1.0"
+__maintainer__ = "Jaiden Cook"
+__email__ = "Jaiden.Cook1@gmail.com"
+
 import importlib.resources as resources
 from mmode_tools.beam import FITS2beam,analytic_dipole_beam
 import numpy as np

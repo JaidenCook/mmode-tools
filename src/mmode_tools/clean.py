@@ -1,3 +1,9 @@
+__author__ = "Jaiden Cook"
+__credits__ = ["Jaiden Cook"]
+__version__ = "1.0"
+__maintainer__ = "Jaiden Cook"
+__email__ = "Jaiden.Cook1@gmail.com"
+
 import numpy as np
 import tqdm
 from tqdm import tqdm
@@ -13,7 +19,7 @@ from warnings import warn
 from mmode_tools.skymap import SkyMap,calc_analytic_ps,convolve_model_map
 
 
-def fit_restoring_beam(xdata_tuple,data,coord):
+def fit_restoring_beam(xdata_tuple,data,coord,returnPA=False):
     """
     Fit a single Gaussian to the PSF.
 
@@ -26,6 +32,8 @@ def fit_restoring_beam(xdata_tuple,data,coord):
     coord : numpy array or list
         List or numpy array containing the (x,y) coordinates of the fit 
         Gaussian.
+    returnPA : bool, optional
+        If True, return the position angle of the fit Gaussian, by default False.
             
     Returns:
     ----------
@@ -45,18 +53,22 @@ def fit_restoring_beam(xdata_tuple,data,coord):
     # Roughly 2-sigma condition.
     boolVec = data >= peak*0.01
 
-    lowBound = [0,0,0,0,0]
-    upBound = [np.inf,np.inf,np.inf,np.inf,np.inf]
+    lowBound = [0,0,0,0,0,-np.pi]
+    upBound = [np.inf,np.inf,np.inf,np.inf,np.inf,np.pi]
     # Perform the fitting.
     popt,_ = curve_fit(Gaussian2Dxy,(xx[boolVec]-coord[1],yy[boolVec]-coord[0]),
-                       data[boolVec],p0=[1,0,0,1,1],bounds=(lowBound,upBound),
+                       data[boolVec],p0=[1,0,0,1,1,0],bounds=(lowBound,upBound),
                        sigma=rms*np.ones(xx[boolVec].size))
     # Getting the
     amp = popt[0] 
     sigx = popt[3]
     sigy = popt[4]
+    PA = popt[5]
 
-    return amp,sigx,sigy
+    if returnPA:
+        return amp,sigx,sigy,PA
+    else:
+        return amp,sigx,sigy
 
 def calc_psf_map(pointCoord,weightsTensor,dirtyMapShape,returnCoeffs=False,
                  scale=1):

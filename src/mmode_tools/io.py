@@ -1,3 +1,9 @@
+__author__ = "Jaiden Cook"
+__credits__ = ["Jaiden Cook"]
+__version__ = "1.0"
+__maintainer__ = "Jaiden Cook"
+__email__ = "Jaiden.Cook1@gmail.com"
+
 import numpy as np
 import astropy.io.fits as fits
 from mmode_tools.beam import radec2azel
@@ -262,6 +268,101 @@ def writeCovTensor(lstVec,covTensor,tVecGPS,filePath,flagInds=None,
                      overwrite=overwrite)
         print('Flags written to file...')
 
+def read_uvfits_pyvdata(filepath,returnuv=False,zenith_phase=False):
+    """
+    Read a UVFITS file using pyuvdata, with a return format compatible with
+    the legacy read_uvfits function.
+
+    Parameters
+    ----------
+    filepath : str
+        Path to uvfits file.
+    returnuv : bool, optional
+        If True, also return UU, VV, WW (meters), by default False.
+    zenith_phase : bool, optional
+        If True, phase the data to zenith, by default False.
+
+    Returns
+    -------
+    tjd : np.ndarray
+        Julian date time array, shape (Nblines,).
+    ant1Vec : np.ndarray
+        Antenna 1 IDs, shape (Nblines,).
+    ant2Vec : np.ndarray
+        Antenna 2 IDs, shape (Nblines,).
+    visData : np.ndarray
+        Visibility data in legacy-packed format:
+        shape (Nblines, Nspws, 1, Nfreqs, Npols, 3), where
+        visData[..., 0] = real, visData[..., 1] = imag, visData[..., 2] = 
+        weight.
+    UU, VV, WW : np.ndarray, optional
+        UVW coordinates in meters, each shape (Nblts,), only if returnuv=True.
+    """
+    import numpy as np
+    from pyuvdata import UVData
+
+    try:
+        uv = UVData()
+        uv.read(filepath,file_type="uvfits")
+    except ValueError:
+        # In the event there are metadata issues, try reading without checks.
+        uv = UVData()
+        uv.read(filepath,file_type="uvfits",run_check=False)
+
+    tjd = uv.time_array.astype(float)
+    ant1Vec = uv.ant_1_array.astype(int)
+    ant2Vec = uv.ant_2_array.astype(int)
+
+    #
+    if zenith_phase:
+        if hasattr(uv,"unphase_to_drift"):
+            uv.unphase_to_drift()
+        elif hasattr(uv,"unproject_phase"):
+            uv.unproject_phase()
+        else:
+            raise RuntimeError("No unphase method in this pyuvdata version.")
+
+        # Unique time steps.
+        times = np.unique(uv.time_array)
+        
+        # Phase to zenith for each time step.
+        for t in times:
+            uvt = uv.select(times=[t],inplace=False)
+            uvt.phase_to_time(float(t))  # zenith at this integration time
+
+    # pyuvdata data shape: (Nblts, Nspws, Nfreqs, Npols)
+    # Build legacy-like packed DATA array:
+    # (Nblts,Nspws,1,Nfreqs,Npols,3)
+    # last axis: [real, imag, weight]
+    data = np.asarray(uv.data_array)
+    nsamp = np.asarray(uv.nsample_array,dtype=np.float32)
+    flags = np.asarray(uv.flag_array,dtype=bool)
+
+    # Match legacy convention seen in existing code comparisons
+    # (pyuvdata vis often appears conjugated vs astropy direct reader paths)
+    data = np.conjugate(data)
+
+    Nblines,Nspws,Nfreqs,Npols = data.shape
+    visData = np.zeros((Nblines,Nspws,1,Nfreqs,Npols,3),dtype=np.float32)
+
+    visData[...,0] = data.real[:,:,None,:,:]
+    visData[...,1] = data.imag[:,:,None,:,:]
+
+    # Simple weight mapping: use nsample, negative for flagged samples.
+    wgt = nsamp.copy()
+    wgt[flags] *= -1.0
+    visData[...,2] = wgt[:,:,None,:,:]
+
+    if returnuv:
+        uvw = np.asarray(uv.uvw_array,dtype=float)  # meters
+        # pyuvdata UVW convention is often opposite sign to astropy code, so 
+        # multiply by -1 here to match read_uvfits convention.
+        UU = -1*uvw[:,0]
+        VV = -1*uvw[:,1]
+        WW = -1*uvw[:,2]
+        return tjd,ant1Vec,ant2Vec,visData,UU,VV,WW
+
+    return tjd,ant1Vec,ant2Vec,visData
 
 def read_uvfits(filepath,returnuv=False):
     """
@@ -353,7 +454,7 @@ def read_uvfits_dates(filepath):
     return tjdVec
 
 
-def make_covtensor(filepath,Nant=None,observatory='MRO'):
+def make_covtensor(filepath,Nant=None,observatory='MRO',zenith_phase=False):
     """
     This function takes an input file which contains a list of uvfits files for
     different lst times, covering 24 hours of observations. It then reads in 
@@ -457,7 +558,11 @@ def make_covtensor(filepath,Nant=None,observatory='MRO'):
             if (file == files[ind-1]) and (len(files) > 1):
                 counter += 1
             else:
-                tjd,ant1Vec,ant2Vec,visdata = read_uvfits(tmpFilePath)
+                if zenith_phase:
+                    tjd,ant1Vec,ant2Vec,visdata = read_uvfits_pyvdata(tmpFilePath,
+                                                                      zenith_phase=True)
+                else:
+                    tjd,ant1Vec,ant2Vec,visdata = read_uvfits(tmpFilePath)
                 # converting jd time to LST and assinging to LST vector.
                 tjd = np.unique(tjd)
                 Ncor = int(ant1Vec.size/Nt) # Number of correlations per time.
@@ -563,7 +668,7 @@ def read_LST_VisCube(filepath,returnAutos=False,applyFlags=True,flagMatrix=None,
                 # Old covtensors do not have multiple polarisations, this is a 
                 # catch term.
                 visCube = f[f'data/{prefix}covt'][:,:,:]
-            except ValueError:
+            except KeyError:
                 visCube = f[f'data/{prefix}covt{stokes}'][:,:,:]
         elif len(f['data'].keys()) > 3:
             # Capitalisation convention is not necessarily standard, corrects 
@@ -691,7 +796,8 @@ def read_flags(filepath,verbose=False):
         except KeyError:
             print('No flags')
             return None,None,None
-    if np.any(flagBlines):
+    #if np.any(flagBlines):
+    if flagBlines is not None:
         # If there are any individually flagged baselines, return those antenna 
         # pairs.  
         return goodAntInds,flagInds,flagMatrix,flagBlines

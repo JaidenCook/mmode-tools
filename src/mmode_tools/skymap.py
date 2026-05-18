@@ -1,3 +1,9 @@
+__author__ = "Jaiden Cook"
+__credits__ = ["Jaiden Cook"]
+__version__ = "1.0"
+__maintainer__ = "Jaiden Cook"
+__email__ = "Jaiden.Cook1@gmail.com"
+
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -245,7 +251,7 @@ class SkyMap:
             self.expand_coeffs()
 
     #   
-    def expand_coeffs(self,lMax=None,galactic=False):
+    def expand_coeffs(self,lMax=None,galactic=False,returnMap=False):
         """expand_coeffs creates the cartesian map from the spherical harmonic
         coefficients using the pyshtools package.
 
@@ -266,10 +272,14 @@ class SkyMap:
                                             csphase=-1)
         # Performing check on new lMax input.            
         lMax = self.lmax_check(lMax=lMax)
-
         if galactic:
-            self.skyMapGalactic = coeffsObj.expand(grid='DH2',backend='ducc',
-                                                   lmax=lMax).data.real
+            if returnMap:
+                self.skyMapGalactic = coeffsObj.expand(grid='DH2',
+                                                       backend='ducc',
+                                                       lmax=lMax).data.real
+            else:
+                return coeffsObj.expand(grid='DH2',backend='ducc',
+                                        lmax=lMax).data.real
         else:
             # Setting the colat, colon, RA and DEC grid vectors:
             self.colat = 90-coeffsObj.expand(grid='DH2',backend='ducc',
@@ -281,8 +291,12 @@ class SkyMap:
             self.decVec = coeffsObj.expand(grid='DH2',backend='ducc',
                                                    lmax=lMax).lats()[::-1]
             self.raVec = np.roll(self.raVec,int(self.raVec.size/2))
-            self.skyMap = coeffsObj.expand(grid='DH2',backend='ducc',
+            if returnMap:
+                return coeffsObj.expand(grid='DH2',backend='ducc',
                                            lmax=lMax).data.real
+            else:
+                self.skyMap = coeffsObj.expand(grid='DH2',backend='ducc',
+                                            lmax=lMax).data.real
 
 
     def calc_power_spectrum(self,lMax=None,unit='per_l'):
@@ -695,8 +709,11 @@ class SkyMap:
         import matplotlib.patches as patches
 
         # Performing check on new lMax input.            
+        if lMax is not None:
+            lMax = self.lmax_check(lMax=lMax)
+            img = self.expand_coeffs(lMax=lMax,returnMap=True)
+        
         lMax = self.lmax_check(lMax=lMax)
-
 
         if self.skyMap is None and img is None:
             self.expand_coeffs(lMax=lMax)
@@ -757,7 +774,8 @@ class SkyMap:
                             vmin=None,linear_width=None,projection='mollweide',
                             cmap='twilight_shifted',shading='gouraud',grid=True,
                             fontsize=20,ticks=True,figaxs=None,xticks=False,
-                            title=None,transparent=False):
+                            title=None,transparent=False,
+                            contour_kwargs=None):
         """plot_equatorial_map _summary_
 
         Parameters
@@ -798,6 +816,20 @@ class SkyMap:
             _description_, by default None
         transparent : bool, optional
             _description_, by default False
+        contour_kwargs : dict, optional
+            Dictionary of options controlling the contours. Recognised keys are:
+
+            * ``pmin`` (float) – minimum contour level as a percentage of the
+              reference value, by default ``-100``.
+            * ``pmax`` (float) – maximum contour level as a percentage of the
+              reference value, by default ``100``.
+            * ``nlevels`` (int) – number of contour levels, by default ``6``.
+            * ``ref`` (float or None) – reference value used to convert
+              percentages to absolute levels.  If ``None`` the maximum of
+              ``abs(img)`` is used, by default ``None``.
+
+            Any remaining keys are forwarded directly to
+            ``matplotlib.axes.Axes.contour``.
         """
         # Get the normalisation.
         from matplotlib.colors import AsinhNorm
@@ -855,6 +887,17 @@ class SkyMap:
         else:
             return None
 
+        if contour_kwargs is not None:
+            _ckw = dict(contour_kwargs)
+            _pmin = _ckw.pop('pmin', -100)
+            _pmax = _ckw.pop('pmax', 100)
+            _nlevels = _ckw.pop('nlevels', 6)
+            _ref = _ckw.pop('ref', None)
+            if _ref is None:
+                _ref = np.nanmax(np.abs(img))
+            levels = np.linspace(_pmin / 100, _pmax / 100, _nlevels) * _ref
+            axs.contour(lon, lat, img[:, ::-1], levels=levels, **_ckw)
+
         if ticks:
             cb = fig.colorbar(im,location='bottom',fraction=0.046, pad=0.04)
             cb.set_label('Amplitude',fontsize=fontsize)
@@ -873,7 +916,143 @@ class SkyMap:
 
         if grid:
             axs.grid(ls='-.',alpha=0.25,color='k')
+    
+    def get_cutout(self,pointCoord,size=100,useRadec=False):
+        """get_cutout Extract a rectangular cutout from the sky map.
 
+        Parameters
+        ----------
+        pointCoord : tuple
+            If useRadec is False, pixel indices (xind, yind).
+            If useRadec is True, sky coordinates (RA, DEC) in degrees.
+        size : int or float, optional
+            If useRadec is False, size of the cutout in pixels, by default 100.
+            If useRadec is True, size of the cutout in degrees, by default 100.
+        useRadec : bool, optional
+            If True, pointCoord is interpreted as (RA, DEC) in degrees and
+            size is in degrees. The grid vectors raVec and decVec are used to
+            locate the nearest pixel. By default False.
+
+        Returns
+        -------
+        np.ndarray
+            2D cutout array from skyMap.
+        """
+        if self.skyMap is None:
+            self.expand_coeffs()
+
+        if useRadec:
+            if size > 90:size = 1 #deg
+            ra,dec = pointCoord
+
+            # Finding the nearest pixel indices for the given RA and DEC.
+            xind = int(np.argmin(np.abs(self.raVec - ra)))
+            yind = int(np.argmin(np.abs(self.decVec - dec)))
+
+            # Converting the window size from degrees to pixels.
+            Ncells = self.coeffs.shape[1]*4 + 1
+            halfX = int(size/(360/Ncells))//2
+            halfY = int(size/(180/(Ncells//2)))//2
+
+            print(xind,yind,halfX,halfY)
+        else:
+            xind,yind = pointCoord
+            halfX = size//2
+            halfY = size//2
+
+        cutout = self.skyMap[yind-halfY:yind+halfY,xind-halfX:xind+halfX]
+
+        return cutout
+
+    def fit_point_src(self,srcCoords,size=20,verbose=False):
+
+        from mmode_tools.functions import Gaussian2Dxy
+        from scipy.optimize import curve_fit
+        from scipy.stats import iqr
+
+        data = self.get_cutout(srcCoords,size=size).astype(np.float32)
+        xx,yy = np.meshgrid(np.arange(data.shape[0]),
+                            np.arange(data.shape[1]))
+
+        rms = iqr(data)/1.35
+        peak = np.max(data)
+
+
+        # Roughly 2-sigma condition.
+        #boolVec = data/peak >= 0.01
+        boolVec = data/rms >= 1
+
+        if verbose:
+            print(f"RMS = {rms:5.3f}, Peak = {peak:5.3f}, SNR = {peak/rms:5.3f}")
+            print(f"Fitting to {boolVec.sum()} pixels.")
+
+        ep = 1e-6 # Effectively fix parameter value.
+        lowBound = [1-ep,0,0,0,0,0]
+        upBound = [1+ep,size,size,size,size,np.pi/2]
+        # Perform the fitting.
+        #139.98546016756828
+
+        popt,_ = curve_fit(Gaussian2Dxy,(xx[boolVec],yy[boolVec]),
+                           data[boolVec]/peak,p0=[1,size//2,size//2,1,1,0],
+                           bounds=(lowBound,upBound),
+                           sigma=rms*np.ones(xx[boolVec].size))
+        # Getting the fitted parameters.
+        amp = popt[0] 
+        amaj = popt[3]
+        bmin = popt[4]
+        PA = popt[5]
+    
+        #if bmin > amaj:
+            # If the fitted bmin is greater than amaj, we need to swap these and
+            # add 90 degrees to the PA.
+            #amaj,bmin = bmin,amaj
+            #PA += np.pi/2
+            #PA -= np.pi/2
+
+        if verbose:
+            print(f"Fitted parameters: amp = {amp:5.3f}, amaj = {amaj:5.3f}, " +
+                  f"bmin = {bmin:5.3f}, PA = {PA:5.3f}, x0 = {popt[1]:5.3f}, " +
+                  f"y0 = {popt[2]:5.3f}")
+
+        gaussParams = (amp,amaj,bmin,PA)
+
+        return gaussParams
+    
+    def filter_coeffs(self,filterType='blackmanharris',lMax=None,lwin=None,
+                      lcut=None):
+        """filter_coeffs _summary_
+
+        Parameters
+        ----------
+        filterType : str, optional
+            _description_, by default 'blackmanharris'
+        lMax : _type_, optional
+            _description_, by default None
+        lwin : _type_, optional
+            _description_, by default None
+        lcut : _type_, optional
+            _description_, by default None
+        """
+        from mmode_tools.inversion import filter_coefficients
+                        
+        # Performing check on new lMax input.            
+        lMax = self.lmax_check(lMax=lMax)
+
+        if lwin is None and lcut is None:
+            lwin = int(lMax/10)
+            lcut = lMax - lwin
+        elif lwin is None and lcut is not None:
+            lwin = lMax-int(lcut)
+        elif lwin is not None and lcut is None:
+            lcut = lMax - int(lwin)
+
+        filter_coefficients(self.coeffs,filterType=filterType,
+                            lmax=lMax,lwin=lwin,lcut=lcut)
+        
+        # Recreate the sky map after filtering the coefficients.
+        self.expand_coeffs(lMax=lMax)
+
+        
 
 def convolve_model_map(model,weightsTensor,expandMap=True,lMax=None):
     """convolve_model_map _summary_
