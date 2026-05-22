@@ -18,6 +18,41 @@ from mmode_tools.vistools import vis2mmode_DFT
 from mmode_tools.inversion import invert_tikh_multi_assym,filter_coefficients
 from mmode_tools.constants import c
 
+def gaussian_smooth_1d(vec, window_size, sigma=None):
+    """
+    Apply Gaussian smoothing to a 1D vector.
+    
+    Parameters:
+    -----------
+    vec : numpy.ndarray
+        Input 1D array to smooth.
+    window_size : int
+        Size of the smoothing window. Should be odd.
+    sigma : float, optional
+        Standard deviation of the Gaussian kernel.
+        If None, defaults to window_size / 6.
+        
+    Returns:
+    --------
+    smoothed : numpy.ndarray
+        Smoothed 1D array, same length as input.
+    """
+    if sigma is None:
+        sigma = window_size / 6.0
+
+    # Create Gaussian kernel
+    half_w = window_size // 2
+    x_kernel = np.arange(-half_w, half_w + 1)
+    kernel = np.exp(-0.5 * (x_kernel / sigma) ** 2)
+    kernel /= kernel.sum()
+
+    # Convolve with 'same' mode to preserve length, using reflect padding
+    #padded = np.pad(vec, half_w, mode='reflect')
+    padded = np.pad(vec, half_w, mode='constant', constant_values=np.nan)
+    smoothed = np.convolve(padded, kernel, mode='valid')
+
+    return smoothed
+
 def get_bline_antIDs(configFilePath,flag=True,returnAntIDs=True,
                      returnBlines=True):
     """

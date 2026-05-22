@@ -11,6 +11,7 @@ from scipy.optimize import minimize
 from astropy.time import Time
 from tqdm import tqdm
 from astropy import units
+import matplotlib.pyplot as plt
 
 from mmode_tools.constants import c,MRO,ONSALA
 
@@ -338,162 +339,6 @@ def apply_cal_sols(covTensor,gainSols):
 
     return covTensorCal
 
-
-def Sunsub_holo_uncal(covTensor,tgpsVec,location,radioArray,freq,indVec=None, 
-                      blineMin=4,blineMax=1e6,flagMatrix=None,
-                      verbose=False,fitlmoff=False,
-                      refAntInd=2,delta=0.05,method="Nelder-Mead",
-                      options=None):
-    """
-    Perform selfcalibration towards the sun, then peel the sun from the 
-    visibility data. The self cal solutions are then unapplied to reset the 
-    flux scale.
-
-    Parameters
-    ----------
-    covTensor : np.complex64, np.ndarray
-        Visibility covariance tensor, first axis is the time axis, second and 
-        third axis are the associated covariance matrix.
-    tgpsVec : float, np.ndarray
-        Vector containing the UTC times for each covariance matrix in GPS 
-        format. 
-    location : astropy location object
-        Astropy location object, default input should be the MRO.
-    radioArray : Radio_array object
-        mmode_tools array object, default should be the EDA2.
-    freq : float
-        Observation frequency in Hz.
-    indVec : int, default=None
-        If given, only peel these time indices.
-    blineMin : float, default=4
-        Minimum baseline length in m. 
-    blineMax : float, default=1e6
-        Maximum baseline length in m.
-    verbose : bool, default=False
-        Output parameter, if True print output information.
-    fitlmoff : bool, default=False
-        If True fit the offset position of the source in l and m.
-    refAntInd : int, default=2
-        Reference antenna index.
-    delta : float, default=0.05
-        lm-offset value, max is 1.
-    
-    Returns
-    -------
-    None
-    """
-    lam = c/freq
-    # Getting the antenna locations.
-    antLoc = np.column_stack([radioArray.east,radioArray.north])
-    # Getting the good antenna pairs after baseline flagging.
-    _,goodAntPairs = radioArray.get_baselines(radioArray,blineMin=blineMin,
-                                              blineMax=blineMax,
-                                              flagMatrix=flagMatrix)
-    #In this matrix, 1 indicates a good antenna pair, while 0 is for a bad 
-    # antenna pair
-    flagMat = np.zeros([covTensor.shape[1],covTensor.shape[1]]) 
-    for antPair in goodAntPairs:
-        ant0 = int(antPair[0])
-        ant1 = int(antPair[1])
-        flagMat[ant0,ant1] = 1.0
-        flagMat[ant1,ant0] = 1.0
-
-    tVec = Time(tgpsVec,format="gps",scale='ut1')
-    altazframe = AltAz(obstime=tVec,location=location) 
-    # Getting the solar altitude and azimuth.
-    srcAltAz = get_sun(tVec).transform_to(altazframe)
-    srcAlt = np.radians(srcAltAz.alt.value)
-    srcAz = np.radians(srcAltAz.az.value)
-
-    if np.any(indVec):
-        pass
-    else:
-        # Default create index vector.
-        indVec = np.arange(covTensor.shape[0])
-
-    if fitlmoff:
-        print(f"Method = {method}")
-
-    # Setting any Nan values in the covariance tensor to zero.
-    covTensor[np.isnan(covTensor)] = 0.0
-    for tInd in tqdm(indVec):
-        if np.degrees(srcAlt[tInd]) > 0: #altitude is arbitrary here
-            covMat = np.copy(covTensor[tInd,:,:])
-
-            if fitlmoff:
-                # Fit the sun peak offset.
-                lmMin = minimize(max_cov_gains,(0,0),
-                                args=(srcAlt[tInd],srcAz[tInd],covMat*flagMat,
-                                    antLoc,freq),method=method,
-                                bounds=((-delta,delta),(-delta,delta)),
-                                options=options)
-                
-                lOff,mOff = lmMin.x
-                # If the offsets are equal to the bounds then set the offset to 
-                # be zero.
-                if np.abs(lOff) == delta:
-                    lOff = 0
-                if np.abs(mOff) == delta:
-                    mOff = 0
-            else:
-                lOff,mOff = 0,0
-
-            # Source direction cosine vector.
-            lmSrc = np.array([np.cos(srcAlt[tInd])*np.sin(srcAz[tInd])-lOff,
-                             np.cos(srcAlt[tInd])*np.cos(srcAz[tInd])-mOff])
-            wVec = np.exp(-1j*2*np.pi*np.einsum('ij,j->i',antLoc,lmSrc)/lam)
-
-            # Calculating the antenna gains.
-            covGains = np.einsum('i,il,il,l->i',wVec,covMat,flagMat,
-                                 np.conj(wVec),optimize='optimal')
-            # Setting relative to a reference antenna.
-            covGains = covGains/covGains[refAntInd]
-            
-            GainsPhase = np.angle(covGains)
-            phaseCalMatrix  = np.exp(-1j*GainsPhase)  
-
-            absGains = np.abs(covGains)
-            ampCalMatrix = 1.0/absGains #This works for propely flagged antennas
-
-            # Applyignt the gain self calibration.
-            covMatPhaseCal = np.einsum('a,ab,b->ab',phaseCalMatrix,covMat,
-                                     np.conj(phaseCalMatrix),optimize='optimal')
-            covMatAmpCal = np.einsum('a,ab,b->ab',ampCalMatrix,covMatPhaseCal,
-                                      ampCalMatrix,optimize='optimal')
-            covMatAmpCalPhased = np.einsum('i,il,l-> il',wVec, 
-                                             covMatAmpCal,np.conj(wVec), 
-                                             optimize='optimal')
-            
-            # Estimate the sun flux density. nansum is required.
-            SunFlux = np.real(np.nansum(covMatAmpCalPhased*flagMat)/np.sum(flagMat))
-            if SunFlux < 0:
-                # Negative values add potentially noise signal into the data
-                # this stops that from occuring.
-                SunFlux = 0
-            covMatAmpCalPhasedSunsub = covMatAmpCalPhased - SunFlux
-            covMatAmpCalPhasedSunsub = np.einsum('i,il,l-> il',np.conj(wVec),
-                                                 covMatAmpCalPhasedSunsub,
-                                                 wVec,optimize='optimal')
-            # Unapplying the self calibration gains.
-            covMatAmpCalPhasedSunsub = np.einsum('a,ab,b->ab',1/ampCalMatrix,
-                                                 covMatAmpCalPhasedSunsub,
-                                                 1/ampCalMatrix,
-                                                 optimize='optimal')
-            covMatAmpCalPhasedSunsub = np.einsum('a,ab,b->ab',
-                                                 np.conj(phaseCalMatrix),
-                                                 covMatAmpCalPhasedSunsub,
-                                                 phaseCalMatrix,
-                                                 optimize='optimal')
-            
-            covTensor[tInd,:,:] = covMatAmpCalPhasedSunsub
-            
-            if (lOff != 0 or mOff != 0) and verbose:
-                print(f"lm offset = {lOff:7.5f},{mOff:7.5f}")
-                print(f'Sun altitude = {np.degrees(srcAlt[tInd]):5.3f} [deg]')
-                print(f"Sun Flux = {SunFlux:5.3f} [arbitrary units]")
-
-    return None
-
 def calc_mean_covTensor(lstVec,covTensor,Nlst=1440,binsCond=False,
                         tgpsVec=None,Array=None,freq=160,location=MRO):
     """
@@ -697,3 +542,300 @@ def calc_std_covTensor(lstVec,covTensor,Nlst=1440,binsCond=False,
         return lstAvgVec,diffCovTensorCalAvg,binVec
     else:
         return lstAvgVec,diffCovTensorCalAvg
+
+
+
+def calc_vis_DFT(uvwArr,lVec,visVec,grid,dL=0.1,dM=0.1,Ngrid=31,stdThresh=2.5,
+                 plotCond=False,returnlCent=False):
+    """calc_vis_DFT _summary_
+
+    Parameters
+    ----------
+    uvwArr : _type_
+        _description_
+    lVec : _type_
+        _description_
+    visVec : _type_
+        _description_
+    grid : _type_
+        _description_
+    dL : float, optional
+        _description_, by default 0.1
+    dM : float, optional
+        _description_, by default 0.1
+    Ngrid : int, optional
+        _description_, by default 31
+    stdThresh : float, optional
+        _description_, by default 2.5
+    plotCond : bool, optional
+        _description_, by default False
+    returnlCent : bool, optional
+        _description_, by default False
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    from scipy.stats import iqr
+    uVec = uvwArr[:,0]
+    vVec = uvwArr[:,1]
+    wVec = uvwArr[:,2]
+
+    l0 = lVec[0]
+    m0 = lVec[1]
+
+    dl = dL/Ngrid
+    dm = dM/Ngrid
+
+    xGrid,yGrid = grid
+    lGrid = l0 + dl*xGrid
+    mGrid = m0 + dm*yGrid
+    nGrid = np.sqrt(1-lGrid**2 - mGrid**2)
+
+    uu_lmod = uVec[:,None]*lGrid[None,:]
+    vv_mmod = vVec[:,None]*mGrid[None,:]
+    ww_nmod = wVec[:,None]*(nGrid[None,:]-1)
+
+    phaseTensor = np.exp(2*np.pi*1j*(uu_lmod+vv_mmod+ww_nmod))
+
+    visArrPhased = visVec[:,None]*phaseTensor
+    IntVec = np.nanmean(visArrPhased,axis=0).real
+
+    intStd = iqr(IntVec[np.isnan(IntVec)==False])
+
+    intBoolInds = (IntVec > stdThresh*intStd) * (np.isnan(nGrid) == False)
+    N = IntVec[intBoolInds].size
+
+    if returnlCent:
+        lCent = lGrid[np.nanargmax(IntVec)]
+        mCent = mGrid[np.nanargmax(IntVec)]
+
+    if plotCond:
+        IntVec[intBoolInds==False] = np.nan
+        beamImg = IntVec.reshape(Ngrid,Ngrid)
+        im = plt.imshow(beamImg,
+                        origin='lower',
+                        extent=[lGrid.min(),lGrid.max(),mGrid.min(),mGrid.max()])
+        plt.scatter(l0,m0)
+        if returnlCent:
+            plt.scatter(lCent,mCent,color='r',marker='x')
+        plt.colorbar(im)
+        plt.show()
+
+    uu_lmod = uu_lmod[:,intBoolInds]
+    vv_mmod = vv_mmod[:,intBoolInds]
+    ww_nmod = ww_nmod[:,intBoolInds]
+
+    srcPhaseTensor = np.exp(-2*np.pi*1j*(uu_lmod+vv_mmod+ww_nmod))
+
+    IntVec[intBoolInds==False] = np.nan
+    IntMatrix = IntVec[None,intBoolInds]*srcPhaseTensor
+    beamImg = IntVec.reshape(Ngrid,Ngrid)
+    visVecModel = np.sum(IntMatrix,axis=1)/N
+
+    if returnlCent:
+        return visVecModel,lCent,mCent,beamImg
+    else:
+        return visVecModel,beamImg
+
+def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
+                              coords,dL=0.025,dM=0.025,Ngrid=65,stdThresh=1,
+                              plotCond=False,returnAll=False,
+                              window_size=51,sigma=5,altCut=0.05):
+    """calc_DFT_source_vis_model _summary_
+
+    Parameters
+    ----------
+    dataTensor : _type_
+        _description_
+    t : _type_
+        _description_
+    interferometer : _type_
+        _description_
+    freq : _type_
+        _description_
+    flagMatrix : _type_
+        _description_
+    coords : _type_
+        _description_
+    dL : float, optional
+        _description_, by default 0.025
+    dM : float, optional
+        _description_, by default 0.025
+    Ngrid : int, optional
+        _description_, by default 65
+    stdThresh : int, optional
+        _description_, by default 1
+    plotCond : bool, optional
+        _description_, by default False
+    returnAll : bool, optional
+        _description_, by default False
+    window_size : int, optional
+        _description_, by default 51
+    sigma : int, optional
+        _description_, by default 5
+    altCut : float, optional
+        _description_, by default 0.05
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    from astropy.coordinates import AltAz
+    from mmode_tools.functions import Gaussian2Dxy
+    from mmode_tools.modelling import calc_lmn
+    from mmode_tools.utils import gaussian_smooth_1d
+    from matplotlib import patches
+
+    lam = c/(freq)
+    # Get thge alt for each time step, we will use this to filter out low
+    #  altitude timesteps with poor signal.
+    altaz = coords.transform_to(AltAz(obstime=t,location=MRO))
+    altVec = altaz.alt.degree
+    altBoolVec = altVec > altCut
+    # Calc uvw's for the post corr beamforming.
+    uvwArr = np.vstack((interferometer.uu_m[flagMatrix]/lam,
+                        interferometer.vv_m[flagMatrix]/lam,
+                        interferometer.ww_m[flagMatrix]/lam)).T
+    # Make a grid to perform the DFT on, centered on the phase centre.
+    grid = np.mgrid[-Ngrid//2:Ngrid//2,-Ngrid//2:Ngrid//2] + 1
+    gridFlat = (np.copy(grid)[0].T.flatten(), np.copy(grid)[1].T.flatten())
+
+    # Initialise all the output vectors.
+    indVec = np.arange(t.gps.size)
+    lCentVec = np.zeros(t.gps.size)
+    lCentNewVec = np.zeros(t.gps.size)
+    mCentNewVec = np.zeros(t.gps.size)
+    mCentVec = np.zeros(t.gps.size)
+    poptArr = np.zeros((indVec[altBoolVec].size,6))
+    ampVec = np.zeros(t.gps.size)
+
+    # Setting some parameters for the fitting.
+    dl = dL/Ngrid
+    dm = dM/Ngrid
+    sigMax = Ngrid//6 + 1
+    # Loop through each time step, and make a DFT grid.
+    for i,ind in enumerate(tqdm(indVec[altBoolVec])):
+        visVec = dataTensor[ind,flagMatrix]
+        altCent = altaz.alt.value[ind]
+        azCent = altaz.az.value[ind]
+        lCent,mCent,_ = calc_lmn(altCent,azCent,degrees=True)
+        
+
+        _,beamImg = calc_vis_DFT(uvwArr,(lCent,mCent),visVec,gridFlat,dL=dL,
+                                dM=dM,Ngrid=Ngrid,stdThresh=stdThresh,
+                                plotCond=False,returnlCent=False)
+        #popt = fit_restoring_beam((grid[0],grid[1]),beamImg.T,sigMax=sigMax)
+        if np.any(np.isnan(beamImg)):
+            boolVec = np.isnan(beamImg)==False
+            data = beamImg[boolVec]
+            xx = grid[0][boolVec]
+            yy = grid[1][boolVec]
+        
+        # Getting the important values position and peak intensity.
+        y0 = yy[data.argmax()]
+        x0 = xx[data.argmax()]
+        peak = np.nanmax(data)
+
+        # Assigning parameter values.
+        popt = np.array([peak,y0,x0,sigMax,sigMax,1.127])
+        poptArr[i] = popt
+        lCentNewVec[ind] = lCent + popt[1]*dL/Ngrid
+        mCentNewVec[ind] = mCent + popt[2]*dM/Ngrid
+        lCentVec[ind] = lCent
+        mCentVec[ind] = mCent
+        ampVec[ind] = popt[0]
+        
+        if i%100 == 0:
+            plotCond = True 
+        else:
+            plotCond = False
+
+        if plotCond:
+            # Creating the l and m  grid.    
+            lGrid = lCent + dl*grid[0]
+            mGrid = mCent + dm*grid[1]
+            print(f"Ind {ind}: alt {altCent}, az {azCent}, l {lCent}, m {mCent}")
+            print(f"Fitted params: amp {popt[0]}, x0 {popt[1]}, y0 {popt[2]}, sigx {popt[3]}, sigy {popt[4]}, PA {popt[5]}")
+            modImg = Gaussian2Dxy((grid[0].T.flatten(),
+                                   grid[1].T.flatten()),
+                                   *popt).reshape(beamImg.shape)
+
+            fig,axs = plt.subplots(1,3,figsize=(18,5))
+            im1 = axs[0].imshow(beamImg,
+                            origin='lower',
+                            extent=[lGrid.min(),lGrid.max(),mGrid.min(),mGrid.max()])
+            im2 = axs[1].imshow(modImg,
+                            origin='lower',
+                            extent=[lGrid.min(),lGrid.max(),mGrid.min(),mGrid.max()])
+            im3 = axs[2].imshow(beamImg-modImg,
+                            origin='lower',
+                            extent=[lGrid.min(),lGrid.max(),mGrid.min(),mGrid.max()])
+            axs[0].scatter(lCent,mCent)
+            # Peak brightness position.
+            axs[0].scatter(lGrid.T.flatten()[np.nanargmax(beamImg)],
+                           mGrid.T.flatten()[np.nanargmax(beamImg)])
+            
+            axs[0].scatter(lCentNewVec[ind],mCentNewVec[ind],color='r',marker='x')
+            axs[1].scatter(lCentNewVec[ind],mCentNewVec[ind],color='r',marker='x')
+            fig.colorbar(im1, ax=axs)
+            ellipse = patches.Ellipse(
+                xy=(lCentNewVec[ind],mCentNewVec[ind]),
+                width=popt[3]*dL/Ngrid,
+                height=popt[4]*dM/Ngrid,
+                angle=360-np.degrees(popt[5]),# matplotlib uses degrees
+                edgecolor='red',
+                facecolor='none',
+                linewidth=1.5,
+                label=f'Source Fit'
+            )
+            axs[0].add_patch(ellipse)
+            
+            plt.show()
+    #
+    ampVecSmooth = gaussian_smooth_1d(ampVec,window_size=window_size,
+                                      sigma=sigma)
+    modelVisTensor = make_DFT_model_vis_tensor(interferometer,lam,lCentNewVec,
+                                               mCentNewVec,ampVecSmooth,
+                                               verbose=True)
+    #
+    if returnAll:
+        return (poptArr,lCentVec,mCentVec,lCentNewVec,mCentNewVec,ampVec,
+                ampVecSmooth,modelVisTensor)
+    else:
+        return poptArr,modelVisTensor
+
+
+def make_DFT_model_vis_tensor(interferometer,lam,lCentNewVec,mCentNewVec,
+                              ampVec,verbose=False):
+    """make_DFT_model_vis_tensor _summary_
+
+    Parameters
+    ----------
+    interferometer : _type_
+        _description_
+    lam : _type_
+        _description_
+    lCentNewVec : _type_
+        _description_
+    mCentNewVec : _type_
+        _description_
+    ampVec : _type_
+        _description_
+    verbose : bool, optional
+        _description_, by default False
+
+    Returns
+    -------
+    visTensor : numpy.ndarray
+        Numpy array containing the modeled visibilities.
+    """
+    from mmode_tools.modelling import point_mod
+    nCentNewVec = np.sqrt(1-lCentNewVec**2 - mCentNewVec**2)
+
+    visTensor = point_mod(interferometer,lam,lCentNewVec,mCentNewVec,
+                          nCentNewVec,ampVec,verbose=verbose)
+    
+    return visTensor
