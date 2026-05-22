@@ -150,8 +150,8 @@ def point_mod(interferometer,lam,lMod,mMod,nMod,Sapp,verbose=False):
     #
     uu_lmod = interferometer.uu_m[None,:,:]*lMod[:,None,None]/lam
     vv_mmod = interferometer.vv_m[None,:,:]*mMod[:,None,None]/lam
-    ww_nmod = interferometer.ww_m[None,:,:]*nMod[:,None,None]/lam
-    #ww_nmod = interferometer.ww_m[None,:,:]*(nMod[:,None,None]-1)/lam
+    #ww_nmod = interferometer.ww_m[None,:,:]*nMod[:,None,None]/lam
+    ww_nmod = interferometer.ww_m[None,:,:]*(nMod[:,None,None]-1)/lam
 
     if verbose:
         print(uu_lmod.shape)
