@@ -608,7 +608,8 @@ def FITS2beam(beamFilePath,latRad,lMax,sampling='DH1'):
     mGrid = np.linspace(-1,1,NAXIS2)
     # Defining an interpolator relative to the grid.
     beamInterp = RegularGridInterpolator(points=(lGrid,mGrid),
-                                         values=beamMapFits)
+                                         values=beamMapFits,
+                                         fill_value=0,bounds_error=False)
     # Defining the RA and DEC Grids.
     # DH1 and DH2 sampling is now supported. Doesn't change anything.
     if sampling == 'DH1':

@@ -95,7 +95,7 @@ def beam_coefficients_main(
     with open(interferometerPath/config_file, 'r') as f:
         config = toml.load(f)
         newConfig = copy(config)
-        arrayLat = config['location']['lat']
+        arrayLat = float(config['location']['lat'])
         telescope = config['params']['telescope']
         override = config['params']['override']
 
@@ -140,15 +140,17 @@ def beam_coefficients_main(
     else:
         lblineMax = lmax
 
-    print(f"Telescope : {telescope}")
-    print(f"Latitude : {arrayLat:5.3f} [deg]")
+    #print(f"Telescope : {telescope}")
+    #print(f"Latitude : {arrayLat:5.3f} [deg]")
+    print(f"Telescope : {Array.telescope}")
+    print(f"Latitude : {Array.lat:5.3f} [deg]")
     print(f"Instrument polarisation : {pol}")
 
     blines,antPairs = RadioArray.get_baselines(Array,calcAutos=False)
     
-    if telescope == 'ONSALA':
+    #if telescope == 'ONSALA':
         # Fixing a conjugate error in the simulated data.
-        blines *= -1
+        #blines *= -1
 
     memMax = memCalc(Array.Nant,lmax,np.complex64)
     print(f"Will need, {memMax:5.3f}GB of RAM for the m-mode coefficients.")
