@@ -15,6 +15,21 @@ import matplotlib.pyplot as plt
 
 from mmode_tools.constants import c,MRO,ONSALA
 
+def alt_cut_func(altVec,leftCut,rightCut):
+    """
+    
+    """
+
+    maxAltInd = np.argmax(altVec)
+    altVecLeft = altVec[:maxAltInd]
+    altVecRight = altVec[maxAltInd:]
+    boolVecLeft = altVecLeft > leftCut
+    boolVecRight = altVecRight > rightCut
+    print(boolVecLeft.sum(),boolVecRight.sum())
+    altBoolVec = np.concatenate((boolVecLeft,boolVecRight))
+    
+    return altBoolVec
+
 def vis2mmode_DFT(covTensor,lstVec,goodInds,Ncells,rMatrix=None,IDFT=True,
                   plotTest=False):
     """
@@ -614,7 +629,7 @@ def calc_vis_DFT(uvwArr,lVec,visVec,grid,dL=0.1,dM=0.1,Ngrid=31,stdThresh=2.5,
     if plotCond:
         IntVec[intBoolInds==False] = np.nan
         beamImg = IntVec.reshape(Ngrid,Ngrid)
-        im = plt.imshow(beamImg,
+        im = plt.imshow(beamImg.T,
                         origin='lower',
                         extent=[lGrid.min(),lGrid.max(),mGrid.min(),mGrid.max()])
         plt.scatter(l0,m0)
@@ -642,7 +657,8 @@ def calc_vis_DFT(uvwArr,lVec,visVec,grid,dL=0.1,dM=0.1,Ngrid=31,stdThresh=2.5,
 def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
                               coords,dL=0.025,dM=0.025,Ngrid=65,stdThresh=1,
                               plotCond=False,returnAll=False,
-                              window_size=51,sigma=5,altCut=0.05):
+                              window_size=51,sigma=5,altCut=0.05,
+                              returnSmooth=False):
     """calc_DFT_source_vis_model _summary_
 
     Parameters
@@ -694,7 +710,13 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
     #  altitude timesteps with poor signal.
     altaz = coords.transform_to(AltAz(obstime=t,location=MRO))
     altVec = altaz.alt.degree
-    altBoolVec = altVec > altCut
+    if isinstance(altCut,tuple):
+        leftCut,rightCut=altCut
+        altBoolVec = alt_cut_func(altVec,leftCut,rightCut)
+    elif isinstance(altCut,float) or isinstance(altCut,int):
+        altBoolVec = altVec > altCut
+    else:
+        raise ValueError("altCut must be a float, int or tuple.")
     # Calc uvw's for the post corr beamforming.
     uvwArr = np.vstack((interferometer.uu_m[flagMatrix]/lam,
                         interferometer.vv_m[flagMatrix]/lam,
@@ -735,9 +757,14 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
             yy = grid[1][boolVec]
         
         # Getting the important values position and peak intensity.
-        y0 = yy[data.argmax()]
-        x0 = xx[data.argmax()]
-        peak = np.nanmax(data)
+        try:
+            y0 = yy[data.argmax()]
+            x0 = xx[data.argmax()]
+            peak = np.nanmax(data)
+        except ValueError:
+            y0 = 0
+            x0 = 0
+            peak = 0
 
         # Assigning parameter values.
         popt = np.array([peak,y0,x0,sigMax,sigMax,1.127])
@@ -748,12 +775,15 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
         mCentVec[ind] = mCent
         ampVec[ind] = popt[0]
         
-        if i%100 == 0:
-            plotCond = True 
-        else:
-            plotCond = False
-
         if plotCond:
+            if i%100 == 0:
+                plot = True 
+            else:
+                plot = False
+        else:
+            plot = False
+
+        if plot:
             # Creating the l and m  grid.    
             lGrid = lCent + dl*grid[0]
             mGrid = mCent + dm*grid[1]
@@ -797,9 +827,18 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
     #
     ampVecSmooth = gaussian_smooth_1d(ampVec,window_size=window_size,
                                       sigma=sigma)
-    modelVisTensor = make_DFT_model_vis_tensor(interferometer,lam,lCentNewVec,
-                                               mCentNewVec,ampVecSmooth,
-                                               verbose=True)
+    if returnSmooth:
+    
+        modelVisTensor = make_DFT_model_vis_tensor(interferometer,lam,
+                                                   lCentNewVec,mCentNewVec,
+                                                   ampVecSmooth,verbose=True)
+    else:
+        #modelVisTensor = make_DFT_model_vis_tensor(interferometer,lam,
+        #                                           lCentNewVec,mCentNewVec,
+        #                                           ampVec,verbose=True)
+        modelVisTensor = make_DFT_model_vis_tensor(interferometer,lam,
+                                                   lCentVec,mCentVec,
+                                                   ampVec,verbose=True)
     #
     if returnAll:
         return (poptArr,lCentVec,mCentVec,lCentNewVec,mCentNewVec,ampVec,
