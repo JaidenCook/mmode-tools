@@ -109,7 +109,7 @@ def radec2lmn(tgpsVec,ra,dec,location=MRO,nan_below_horizon=True):
 
     return lVec,mVec,nVec
 
-def point_mod(interferometer,lam,lMod,mMod,nMod,Sapp,verbose=False):
+def point_mod(interferometer,lam,lMod,mMod,nMod,Sapp,phaseCond=False):
     """
     Takes input point source l, m and n values (as a function of LST), as well 
     as the apparent source brightness, and computes a model visibility 
@@ -150,13 +150,10 @@ def point_mod(interferometer,lam,lMod,mMod,nMod,Sapp,verbose=False):
     #
     uu_lmod = interferometer.uu_m[None,:,:]*lMod[:,None,None]/lam
     vv_mmod = interferometer.vv_m[None,:,:]*mMod[:,None,None]/lam
-    #ww_nmod = interferometer.ww_m[None,:,:]*nMod[:,None,None]/lam
-    ww_nmod = interferometer.ww_m[None,:,:]*(nMod[:,None,None]-1)/lam
-
-    if verbose:
-        print(uu_lmod.shape)
-        print(vv_mmod.shape)
-        print(ww_nmod.shape)
+    if phaseCond:
+        ww_nmod = interferometer.ww_m[None,:,:]*(nMod[:,None,None]-1)/lam
+    else:
+        ww_nmod = interferometer.ww_m[None,:,:]*nMod[:,None,None]/lam 
 
     VisCovTensor = Sapp[:,None,None]*exp(-2*pi*1j*(uu_lmod+vv_mmod+ww_nmod))
     #VisCovTensor = Sapp[:,None,None]*exp(-2*pi*1j*(uu_lmod+vv_mmod))
