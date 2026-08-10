@@ -478,9 +478,6 @@ class SkyMap:
             skyMapObjLPF = coeffsObjLFP.expand(grid='DH2',backend='ducc',
                                                lmax=lMax)
             self.bkgMap = skyMapObjLPF.data.real
-        # 
-        self.windowSizeDeg = windowSizeDeg
-        self.windowSizePix = windowSizePix
     
     #
     def calc_std_map(self,windowSizeDeg=6,lMax=None):
@@ -496,6 +493,12 @@ class SkyMap:
 
         # Performing check on new lMax input.            
         lMax = self.lmax_check(lMax=lMax)
+
+        Ncells = self.coeffs.shape[1]*4 + 1
+        windowSizePix = int(windowSizeDeg/(360/Ncells)) + 1
+
+        if windowSizePix % 2 == 0:
+            windowSizePix += 1
         
         if self.bkgMap is None:
             # We need the background map to estime the std, if None, then we
@@ -503,10 +506,11 @@ class SkyMap:
             self.calc_background_map(windowSizeDeg=windowSizeDeg,lMax=lMax)
         
         
-        calFactor = 1.4826
+        calFactor = 1.4826 # Maps MAD to Std
         diffMap = self.skyMap - self.bkgMap
+        # Median Absolute Difference map.
         self.stdMap =  calFactor*generic_filter(np.abs(diffMap),np.median,
-                                                size=self.windowSizePix)
+                                                size=windowSizePix)
 
     def calc_thresh_map(self,windowSizeDeg=6,lMax=None):
         """calc_thresh_map _summary_
@@ -531,7 +535,7 @@ class SkyMap:
         self.expand_coeffs()
         self.threshMap = (self.skyMap - self.bkgMap)/self.stdMap
     
-    def find_peaks(self,thresh=4,windowSizeDeg=6,**kwargs):
+    def find_peaks(self,thresh=4,windowSizeDeg=6,findNegPeaks=False,**kwargs):
         """find_peaks Find peaks in the threshold map.
 
         Parameters
@@ -555,12 +559,19 @@ class SkyMap:
         if self.cleanMask is not None:
             threshMap[self.cleanMask == False] = 0
 
-         # Performing the peak detection on the masked threshold map.
-        coords = peak_local_max(threshMap,threshold_abs=thresh,**kwargs)
+        # Performing the peak detection on the masked threshold map.
+        if findNegPeaks:
+            coords = peak_local_max(np.abs(threshMap),threshold_abs=thresh,
+                                    **kwargs)
+        else:
+            coords = peak_local_max(threshMap,threshold_abs=thresh,**kwargs)
         #coords = peak_local_max(threshMap,threshold_abs=thresh,min_distance=10,
         #                        num_peaks=100)
         threshVec = threshMap[coords[:,0],coords[:,1]]
-        coords = coords[threshVec>=thresh,:]
+        if findNegPeaks:
+            coords = coords[np.abs(threshVec)>=thresh,:]
+        else:
+            coords = coords[threshVec>=thresh,:]
 
         return coords
 
@@ -840,7 +851,7 @@ class SkyMap:
         if img is None:
             if galactic:
                 if self.skyMapGalactic is None:
-                    self.expand_coeffs(galactic=True,lMax=lMax)
+                    self.expand_coeffs(galactic=True,lMax=lMax,returnMap=True)
                 img = self.skyMapGalactic
             else:
                 if self.skyMap is None:
