@@ -4,6 +4,8 @@ __version__ = "1.0"
 __maintainer__ = "Jaiden Cook"
 __email__ = "Jaiden.Cook1@gmail.com"
 
+import warnings
+
 import numpy as np
 from astropy.coordinates import get_sun
 from astropy.coordinates import AltAz,EarthLocation
@@ -558,41 +560,117 @@ def calc_std_covTensor(lstVec,covTensor,Nlst=1440,binsCond=False,
     else:
         return lstAvgVec,diffCovTensorCalAvg
 
+from scipy.optimize import least_squares
+def fit_point_source_enu_offsets(vis, u, v, w, A0, E0, N0,
+                                 dE_max, dN_max, weights=None):
+    """
+    Fit complex amplitude and small ENU position offsets about an image-derived guess.
 
+    Model:
+        V = A * exp[-2pi i (uE + vN + wU)]
+    with
+        E = E0 + dE
+        N = N0 + dN
+
+    Parameters
+    ----------
+    vis : complex ndarray
+    u, v, w : ndarray
+        Baseline coords in wavelengths (ENU basis)
+    A0 : complex or float
+        Initial amplitude guess
+    E0, N0 : float
+        Initial ENU source position from image peak
+    dE_max, dN_max : float
+        Max absolute offset allowed in E and N
+    weights : ndarray, optional
+    """
+
+    vis = np.asarray(vis)
+    u = np.asarray(u)
+    v = np.asarray(v)
+    w = np.asarray(w)
+
+    if weights is None:
+        weights = np.ones_like(u, dtype=float)
+    else:
+        weights = np.asarray(weights)
+
+    sqrtw = np.sqrt(weights)
+    A0 = complex(A0)
+
+    def model(params):
+        Ar, Ai, dE, dN = params
+        E = E0 + dE
+        N = N0 + dN
+        r2 = E*E + N*N
+        if r2 >= 1.0:
+            U = 1e-12
+        else:
+            U = np.sqrt(1.0 - r2)
+
+        A = Ar + 1j*Ai
+        phase = -2j * np.pi * (u*E + v*N + w*U)
+        return A * np.exp(phase)
+
+    def residual(params):
+        mod = model(params)
+        r = sqrtw * (vis - mod)
+        return np.concatenate([r.real, r.imag])
+
+    x0 = np.array([A0.real, A0.imag, 0.0, 0.0], dtype=float)
+
+    lb = [-np.inf, -np.inf, -dE_max, -dN_max]
+    ub = [ np.inf,  np.inf,  dE_max,  dN_max]
+
+    result = least_squares(residual, x0, bounds=(lb, ub), method="trf")
+
+    Ar, Ai, dE, dN = result.x
+    A_fit = Ar + 1j*Ai
+    E_fit = E0 + dE
+    N_fit = N0 + dN
+
+    return result, A_fit, E_fit, N_fit, dE, dN
 
 def calc_vis_DFT(uvwArr,lVec,visVec,grid,dL=0.1,dM=0.1,Ngrid=31,stdThresh=2.5,
-                 plotCond=False,returnlCent=False):
+                 plotCond=False,returnlCent=False,phaseCond=False,
+                 returnVisModel=True):
     """calc_vis_DFT _summary_
 
     Parameters
     ----------
-    uvwArr : _type_
-        _description_
-    lVec : _type_
-        _description_
-    visVec : _type_
-        _description_
-    grid : _type_
-        _description_
+    uvwArr : (N, 3) ndarray
+        Baseline coordinates in wavelengths, in ENU basis.
+    lVec : (2,) ndarray
+        Initial EN direction cosine guess from the image peak.
+    visVec : (N,) complex ndarray
+        Observed visibilities for one time/frequency chunk.
+    grid : (2, Ngrid, Ngrid) ndarray
+        Grid coordinates for the DFT calculation.
     dL : float, optional
-        _description_, by default 0.1
+        Grid spacing in the l direction, by default 0.1
     dM : float, optional
-        _description_, by default 0.1
+        Grid spacing in the m direction, by default 0.1
     Ngrid : int, optional
-        _description_, by default 31
+        Number of grid points in each direction, by default 31
     stdThresh : float, optional
-        _description_, by default 2.5
+        Standard deviation threshold for masking, by default 2.5
     plotCond : bool, optional
-        _description_, by default False
+        Whether to plot the DFT results, by default False
     returnlCent : bool, optional
-        _description_, by default False
+        Whether to return the l center coordinate, by default False
 
     Returns
     -------
-    _type_
-        _description_
+    visVecModel : (N,) complex ndarray
+        Modeled visibilities for the source.
+    lCent, mCent : floats
+        Center coordinates of the source in the l and m directions.
+    beamImg : (Ngrid, Ngrid) ndarray
+        Beam image of the source.
     """
     from scipy.stats import iqr
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
     uVec = uvwArr[:,0]
     vVec = uvwArr[:,1]
     wVec = uvwArr[:,2]
@@ -606,11 +684,14 @@ def calc_vis_DFT(uvwArr,lVec,visVec,grid,dL=0.1,dM=0.1,Ngrid=31,stdThresh=2.5,
     xGrid,yGrid = grid
     lGrid = l0 + dl*xGrid
     mGrid = m0 + dm*yGrid
-    nGrid = np.sqrt(1-lGrid**2 - mGrid**2)
+    nGrid = np.sqrt(1 - lGrid**2 - mGrid**2)
 
     uu_lmod = uVec[:,None]*lGrid[None,:]
     vv_mmod = vVec[:,None]*mGrid[None,:]
-    ww_nmod = wVec[:,None]*(nGrid[None,:]-1)
+    if phaseCond:
+        ww_nmod = wVec[:,None]*(nGrid[None,:]-1) # Correct way.
+    else:
+        ww_nmod = wVec[:,None]*nGrid[None,:]
 
     phaseTensor = np.exp(2*np.pi*1j*(uu_lmod+vv_mmod+ww_nmod))
 
@@ -650,13 +731,19 @@ def calc_vis_DFT(uvwArr,lVec,visVec,grid,dL=0.1,dM=0.1,Ngrid=31,stdThresh=2.5,
     visVecModel = np.sum(IntMatrix,axis=1)/N
 
     if returnlCent:
-        return visVecModel,lCent,mCent,beamImg
+        if returnVisModel:
+            return visVecModel,lCent,mCent,beamImg
+        else:
+            return lCent,mCent,beamImg
     else:
-        return visVecModel,beamImg
+        if returnVisModel:
+            return visVecModel,beamImg
+        else:
+            return beamImg
 
 def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
                               coords,dL=0.025,dM=0.025,Ngrid=65,stdThresh=1,
-                              plotCond=False,returnAll=False,
+                              plotCond=False,returnAll=False,phaseCond=False,
                               window_size=51,sigma=5,altCut=0.05,
                               returnSmooth=False):
     """calc_DFT_source_vis_model _summary_
@@ -723,6 +810,7 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
                         interferometer.ww_m[flagMatrix]/lam)).T
     # Make a grid to perform the DFT on, centered on the phase centre.
     grid = np.mgrid[-Ngrid//2:Ngrid//2,-Ngrid//2:Ngrid//2] + 1
+    #grid = np.mgrid[-Ngrid//2:Ngrid//2,-Ngrid//2:Ngrid//2]
     gridFlat = (np.copy(grid)[0].T.flatten(), np.copy(grid)[1].T.flatten())
 
     # Initialise all the output vectors.
@@ -732,8 +820,10 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
     mCentNewVec = np.zeros(t.gps.size)
     mCentVec = np.zeros(t.gps.size)
     poptArr = np.zeros((indVec[altBoolVec].size,6))
-    ampVec = np.zeros(t.gps.size)
+    #ampVec = np.zeros(t.gps.size)
+    ampVec = np.zeros(t.gps.size,dtype=np.complex64)
 
+    lCentVec,mCentVec,_ = calc_lmn(altaz.alt.value,altaz.az.value,degrees=True)
     # Setting some parameters for the fitting.
     dl = dL/Ngrid
     dm = dM/Ngrid
@@ -741,39 +831,69 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
     # Loop through each time step, and make a DFT grid.
     for i,ind in enumerate(tqdm(indVec[altBoolVec])):
         visVec = dataTensor[ind,flagMatrix]
-        altCent = altaz.alt.value[ind]
-        azCent = altaz.az.value[ind]
-        lCent,mCent,_ = calc_lmn(altCent,azCent,degrees=True)
+        lCent,mCent = lCentVec[ind],mCentVec[ind]
         
-
+        #
         _,beamImg = calc_vis_DFT(uvwArr,(lCent,mCent),visVec,gridFlat,dL=dL,
                                 dM=dM,Ngrid=Ngrid,stdThresh=stdThresh,
                                 plotCond=False,returnlCent=False)
-        #popt = fit_restoring_beam((grid[0],grid[1]),beamImg.T,sigMax=sigMax)
-        if np.any(np.isnan(beamImg)):
-            boolVec = np.isnan(beamImg)==False
-            data = beamImg[boolVec]
-            xx = grid[0][boolVec]
-            yy = grid[1][boolVec]
         
         # Getting the important values position and peak intensity.
         try:
-            y0 = yy[data.argmax()]
-            x0 = xx[data.argmax()]
-            peak = np.nanmax(data)
-        except ValueError:
-            y0 = 0
-            x0 = 0
+            lGrid = lCent + dl*grid[0]
+            mGrid = mCent + dm*grid[1]
+            # The x Grid might need to be flipped.
+            lCentNewVec[ind] = lGrid.T.flatten()[np.nanargmax(beamImg)]
+            mCentNewVec[ind] = mGrid.T.flatten()[np.nanargmax(beamImg)]
+            peak = np.nanmax(beamImg)
+
+            _, peakNew, lCentNew, mCentNew, dE, dN = fit_point_source_enu_offsets(vis=visVec,
+                                                            u=uvwArr[:,0],
+                                                            v=uvwArr[:,1],
+                                                            w=uvwArr[:,2],
+                                                            A0=peak,
+                                                            E0=lCentNewVec[ind],
+                                                            N0=mCentNewVec[ind],
+                                                            dE_max=0.5*dL/Ngrid,
+                                                            dN_max=0.5*dM/Ngrid
+                                                        )
+
+            # Try a second iteration to see if that leads to any improvement.
+            _, peakNew, lCentNew, mCentNew, dE, dN = fit_point_source_enu_offsets(vis=visVec,
+                                                            u=uvwArr[:,0],
+                                                            v=uvwArr[:,1],
+                                                            w=uvwArr[:,2],
+                                                            A0=peakNew,
+                                                            E0=lCentNew,
+                                                            N0=mCentNew,
+                                                            dE_max=0.5*dL/Ngrid,
+                                                            dN_max=0.5*dM/Ngrid
+                                                        )
+            lCentNewVec[ind] = lCentNew
+            mCentNewVec[ind] = mCentNew
+            peak = peakNew
+
+        except (ValueError, UnboundLocalError):
+            lCentNewVec[ind] = lCent
+            mCentNewVec[ind] = mCent
+            peak = 0
+        
+        # We want to make sure points that lie outside of this radius are zero.
+        if np.sqrt((lCent-lCentNewVec[ind])**2 + \
+                   (mCent-mCentNewVec[ind])**2) > 0.95*max(dL,dM)/2:
+            lCentNewVec[ind] = lCent
+            mCentNewVec[ind] = mCent
             peak = 0
 
         # Assigning parameter values.
-        popt = np.array([peak,y0,x0,sigMax,sigMax,1.127])
+        popt = np.array([peak,0,0,sigMax,sigMax,1.127])
         poptArr[i] = popt
-        lCentNewVec[ind] = lCent + popt[1]*dL/Ngrid
-        mCentNewVec[ind] = mCent + popt[2]*dM/Ngrid
+        #lCentNewVec[ind] = lCent + popt[1]*dL/Ngrid
+        #mCentNewVec[ind] = mCent + popt[2]*dM/Ngrid
+        
         lCentVec[ind] = lCent
         mCentVec[ind] = mCent
-        ampVec[ind] = popt[0]
+        ampVec[ind] = peak
         
         if plotCond:
             if i%100 == 0:
@@ -785,9 +905,8 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
 
         if plot:
             # Creating the l and m  grid.    
-            lGrid = lCent + dl*grid[0]
-            mGrid = mCent + dm*grid[1]
-            print(f"Ind {ind}: alt {altCent}, az {azCent}, l {lCent}, m {mCent}")
+            print(f"Ind {ind}: alt {altaz.alt.value[ind]}, az {altaz.az.value[ind]}, l {lCent}, m {mCent}")
+            #print(f"dl {lCentNewVec[ind]-lCent}, dm {mCentNewVec[ind]-mCent}",np.sqrt((0.5*dL)**2 + (0.5*dM)**2),dL/2)
             print(f"Fitted params: amp {popt[0]}, x0 {popt[1]}, y0 {popt[2]}, sigx {popt[3]}, sigy {popt[4]}, PA {popt[5]}")
             modImg = Gaussian2Dxy((grid[0].T.flatten(),
                                    grid[1].T.flatten()),
@@ -805,9 +924,6 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
                             extent=[lGrid.min(),lGrid.max(),mGrid.min(),mGrid.max()])
             axs[0].scatter(lCent,mCent)
             # Peak brightness position.
-            axs[0].scatter(lGrid.T.flatten()[np.nanargmax(beamImg)],
-                           mGrid.T.flatten()[np.nanargmax(beamImg)])
-            
             axs[0].scatter(lCentNewVec[ind],mCentNewVec[ind],color='r',marker='x')
             axs[1].scatter(lCentNewVec[ind],mCentNewVec[ind],color='r',marker='x')
             fig.colorbar(im1, ax=axs)
@@ -831,14 +947,13 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
     
         modelVisTensor = make_DFT_model_vis_tensor(interferometer,lam,
                                                    lCentNewVec,mCentNewVec,
-                                                   ampVecSmooth,verbose=True)
+                                                   ampVecSmooth,
+                                                   phaseCond=phaseCond)
     else:
-        #modelVisTensor = make_DFT_model_vis_tensor(interferometer,lam,
-        #                                           lCentNewVec,mCentNewVec,
-        #                                           ampVec,verbose=True)
         modelVisTensor = make_DFT_model_vis_tensor(interferometer,lam,
-                                                   lCentVec,mCentVec,
-                                                   ampVec,verbose=True)
+                                                   lCentNewVec,mCentNewVec,
+                                                   ampVec,
+                                                   phaseCond=phaseCond)
     #
     if returnAll:
         return (poptArr,lCentVec,mCentVec,lCentNewVec,mCentNewVec,ampVec,
@@ -847,8 +962,130 @@ def calc_DFT_source_vis_model(dataTensor,t,interferometer,freq,flagMatrix,
         return poptArr,modelVisTensor
 
 
+def calc_DFT_source_vis_model_parallel(dataTensor,t,interferometer,freq,flagMatrix,
+                                       coords,dL=0.025,dM=0.025,Ngrid=65,
+                                       stdThresh=1,returnAll=False,
+                                       phaseCond=False,window_size=51,sigma=5,
+                                       altCut=0.05,returnSmooth=False,
+                                       fitCond=True):
+    from astropy.coordinates import AltAz
+    from mmode_tools.modelling import calc_lmn
+    from mmode_tools.utils import gaussian_smooth_1d
+    from joblib import Parallel, delayed
+    
+    
+
+
+    lam = c/(freq)
+    # Get thge alt for each time step, we will use this to filter out low
+    #  altitude timesteps with poor signal.
+    altaz = coords.transform_to(AltAz(obstime=t,location=MRO))
+    altVec = altaz.alt.degree
+    if isinstance(altCut,tuple):
+        leftCut,rightCut=altCut
+        altBoolVec = alt_cut_func(altVec,leftCut,rightCut)
+    elif isinstance(altCut,float) or isinstance(altCut,int):
+        altBoolVec = altVec > altCut
+    else:
+        raise ValueError("altCut must be a float, int or tuple.")
+    # Calc uvw's for the post corr beamforming.
+    uvwArr = np.vstack((interferometer.uu_m[flagMatrix]/lam,
+                        interferometer.vv_m[flagMatrix]/lam,
+                        interferometer.ww_m[flagMatrix]/lam)).T
+    # Make a grid to perform the DFT on, centered on the phase centre.
+    grid = np.mgrid[-Ngrid//2:Ngrid//2,-Ngrid//2:Ngrid//2] + 1
+    gridFlat = (np.copy(grid)[0].T.flatten(), np.copy(grid)[1].T.flatten())
+
+    # Initialise all the output vectors.
+    indVec = np.arange(t.gps.size)
+    lCentVec = np.zeros(t.gps.size)
+    lCentNewVec = np.zeros(t.gps.size)
+    mCentNewVec = np.zeros(t.gps.size)
+    mCentVec = np.zeros(t.gps.size)
+    ampVec = np.zeros(t.gps.size,dtype=np.complex64)
+
+    lCentVec,mCentVec,_ = calc_lmn(altaz.alt.value,altaz.az.value,degrees=True)
+    # Setting some parameters for the fitting.
+    dl = dL/Ngrid
+    dm = dM/Ngrid
+    # Loop through each time step, and make a DFT grid.
+    results = Parallel(n_jobs=-1,verbose=1)(delayed(calc_vis_DFT)(uvwArr,
+                                                        (lCentVec[ind],
+                                                         mCentVec[ind]),
+                                                         dataTensor[ind,flagMatrix],
+                                                         gridFlat,dL=dL,dM=dM,
+                                                         Ngrid=Ngrid,
+                                                         stdThresh=stdThresh,
+                                                         plotCond=False,
+                                                         returnlCent=False,
+                                                         returnVisModel=False,)
+                                   for ind in indVec[altBoolVec])
+    
+    for i, ind in enumerate(tqdm(indVec[altBoolVec])):
+        beamImg = results[i]
+        
+        # Getting the important values position and peak intensity.
+        try:
+            lGrid = lCentVec[ind] + dl*grid[0]
+            mGrid = mCentVec[ind] + dm*grid[1]
+            # The x Grid might need to be flipped.
+            #lCentNewVec[ind] = lGrid.T.flatten()[np.nanargmax(beamImg)]
+            #mCentNewVec[ind] = mGrid.T.flatten()[np.nanargmax(beamImg)]
+            #ampVec[ind] = np.nanmax(beamImg)
+            lCentNewVec[ind] = lGrid.T.flatten()[np.nanargmax(np.abs(beamImg))]
+            mCentNewVec[ind] = mGrid.T.flatten()[np.nanargmax(np.abs(beamImg))]
+            ampVec[ind] = np.nanmax(np.abs(beamImg))
+
+            if fitCond:
+                visVec = dataTensor[ind,flagMatrix]
+                Niter = 3
+                for _ in range(Niter):
+                    _, peakNew, lCentNew, mCentNew, dE, dN = fit_point_source_enu_offsets(vis=visVec,
+                                                                    u=uvwArr[:,0],
+                                                                    v=uvwArr[:,1],
+                                                                    w=uvwArr[:,2],
+                                                                    A0=ampVec[ind],
+                                                                    E0=lCentNewVec[ind],
+                                                                N0=mCentNewVec[ind],
+                                                                dE_max=0.5*dL/Ngrid,
+                                                                dN_max=0.5*dM/Ngrid
+                                                            )
+                    if np.sqrt(lCentNew**2 + mCentNew**2) > 1:
+                        # If the value is not realistic, then we will just
+                        # continue, and use the old values.
+                        continue
+                    else:
+                        lCentNewVec[ind] = lCentNew
+                        mCentNewVec[ind] = mCentNew
+                        ampVec[ind] = peakNew
+        except (ValueError, UnboundLocalError):
+            lCentNewVec[ind] = lCentVec[ind]
+            mCentNewVec[ind] = mCentVec[ind]
+            ampVec[ind] = 0
+    
+    ampVecSmooth = gaussian_smooth_1d(ampVec,window_size=window_size,
+                                      sigma=sigma)
+    
+    if returnSmooth:
+    
+        modelVisTensor = make_DFT_model_vis_tensor(interferometer,lam,
+                                                   lCentNewVec,mCentNewVec,
+                                                   ampVecSmooth,
+                                                   phaseCond=phaseCond)
+    else:
+        modelVisTensor = make_DFT_model_vis_tensor(interferometer,lam,
+                                                   lCentNewVec,mCentNewVec,
+                                                   ampVec,
+                                                   phaseCond=phaseCond)
+    #
+    if returnAll:
+        return (lCentVec,mCentVec,lCentNewVec,mCentNewVec,ampVec,
+                ampVecSmooth,modelVisTensor)
+    else:
+        return modelVisTensor
+
 def make_DFT_model_vis_tensor(interferometer,lam,lCentNewVec,mCentNewVec,
-                              ampVec,verbose=False):
+                              ampVec,phaseCond=False):
     """make_DFT_model_vis_tensor _summary_
 
     Parameters
@@ -875,6 +1112,6 @@ def make_DFT_model_vis_tensor(interferometer,lam,lCentNewVec,mCentNewVec,
     nCentNewVec = np.sqrt(1-lCentNewVec**2 - mCentNewVec**2)
 
     visTensor = point_mod(interferometer,lam,lCentNewVec,mCentNewVec,
-                          nCentNewVec,ampVec,verbose=verbose)
+                          nCentNewVec,ampVec,phaseCond=phaseCond)
     
     return visTensor
