@@ -495,7 +495,8 @@ class SkyMap:
         lMax = self.lmax_check(lMax=lMax)
 
         Ncells = self.coeffs.shape[1]*4 + 1
-        windowSizePix = int(windowSizeDeg/(360/Ncells)) + 1
+        #windowSizePix = int(windowSizeDeg/(360/Ncells)) + 1
+        windowSizePix = int(3/(360/Ncells)) + 1
 
         if windowSizePix % 2 == 0:
             windowSizePix += 1
@@ -511,8 +512,30 @@ class SkyMap:
         # Median Absolute Difference map.
         self.stdMap =  calFactor*generic_filter(np.abs(diffMap),np.median,
                                                 size=windowSizePix)
+        
+        mapPrep = SHGrid.from_array(np.array(self.stdMap,dtype=np.complex64))
+        # Set to zero for the next iteration.
+        stdCoeffs = mapPrep.expand(normalization='ortho',csphase=-1).coeffs
 
-    def calc_thresh_map(self,windowSizeDeg=6,lMax=None):
+
+        windowSizePix = int(windowSizeDeg/(360/Ncells)) + 1
+        
+        if windowSizePix % 2 == 0:
+            windowSizePix += 1
+
+        # Calculating the background estimate. Using a Gaussian to low pass 
+        # filter the coefficients. In future can use a different filter.
+        lsig = 2*np.pi*(1/(np.radians(360/Ncells)*windowSizePix))
+        lVec = np.arange(lMax+1)
+        stdCoLPF = np.copy(stdCoeffs)
+        stdCoLPF[:,:lMax+1,:lMax+1] *= np.exp(-0.5*(lVec/lsig)**2)[None,:,None]
+        coeffsObjLFP = SHCoeffs.from_array(stdCoLPF,normalization='ortho',
+                                        csphase=-1,lmax=lMax)
+        stdMapObjLPF = coeffsObjLFP.expand(grid='DH2',backend='ducc',
+                                            lmax=lMax)
+        self.stdMap = stdMapObjLPF.data.real
+
+    def calc_thresh_map(self,windowSizeDeg=6,lMax=None,bkgMap=True):
         """calc_thresh_map _summary_
 
         Parameters
@@ -533,6 +556,11 @@ class SkyMap:
         
         # Expand the sky again, coefficients could have changed.
         self.expand_coeffs()
+        if bkgMap:
+            if self.bkgMap is None:
+                self.calc_background_map(windowSizeDeg=windowSizeDeg,lMax=lMax)
+        else:
+            self.bkgMap = np.ones_like(self.skyMap)*np.nanmedian(self.skyMap)
         self.threshMap = (self.skyMap - self.bkgMap)/self.stdMap
     
     def find_peaks(self,thresh=4,windowSizeDeg=6,findNegPeaks=False,**kwargs):
