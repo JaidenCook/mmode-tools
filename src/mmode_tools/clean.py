@@ -550,20 +550,21 @@ def make_resid_map(model,almTensor,mmodeTensor,weights=None,lMax=130,lMaxVec=Non
     else:
         return residDirtyMap
     
-
-
-
 def minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
                loopGain=0.1,thresh=7,windowSizeDeg=6,lMax=None,
-               verbosity=0,peaks_kwargs=None):
+               verbosity=0,peaks_kwargs=None,findNegPeaks=False,
+               bkgMap=True):
     # Coefficients can change between iterations.
-    #dirtySkyMap.expand_coeffs()
-    dirtySkyMap.calc_thresh_map(windowSizeDeg=windowSizeDeg,lMax=lMax)
+    dirtySkyMap.calc_thresh_map(windowSizeDeg=windowSizeDeg,lMax=lMax,
+                                bkgMap=bkgMap)
 
     if peaks_kwargs is not None:
-        peakCoords = dirtySkyMap.find_peaks(thresh=thresh,**peaks_kwargs)
+        peakCoords = dirtySkyMap.find_peaks(thresh=thresh,
+                                            findNegPeaks=findNegPeaks,
+                                            **peaks_kwargs)
     else:
-        peakCoords = dirtySkyMap.find_peaks(thresh=thresh)
+        peakCoords = dirtySkyMap.find_peaks(thresh=thresh,
+                                            findNegPeaks=findNegPeaks)
     
     if verbosity > 0:
         print(f"Number of peaks found = {peakCoords.shape[0]}")
@@ -579,7 +580,9 @@ def minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
     if dirtySkyMap.stdMap is not None:
         stdRef = np.nanmedian(dirtySkyMap.stdMap)
         stdVec = dirtySkyMap.stdMap[peakCoords[:,0],peakCoords[:,1]]
-        loopGain = loopGain*stdRef/stdVec
+        loopGain = np.abs(loopGain*stdRef/stdVec)
+        # Set a minimum to the loop gain.
+        loopGain[loopGain < 0.005] = 0.005
 
     # Calculating the amplitude for the model components.
     peakVec = dirtySkyMap.skyMap[peakCoords[:,0],peakCoords[:,1]]
@@ -587,6 +590,10 @@ def minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
     ampVec = peakVec*loopGain/peakInterp(peakLatVec)
     dOmega = 4*np.pi/dirtySkyMap.skyMap.size
     ampVec = ampVec/dOmega/np.cos(np.radians(peakLatVec))
+
+    if verbosity > 0:
+        print(f"Max amplitude = {ampVec.max()}")
+        print(f"Min amplitude = {ampVec.min()}")
 
     # Creating a temporary model map.
     tmpModelMap[peakCoords[:,0],peakCoords[:,1]] = ampVec
@@ -604,7 +611,8 @@ def minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
 
 def deep_minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
                     peakCoords,loopGain=0.1,thresh=7,
-                    windowSizeDeg=6,lMax=None,verbosity=0):
+                    windowSizeDeg=6,lMax=None,verbosity=0,findNegPeaks=False,
+                    bkgMap=True):
     """deep_clean Minor iteration down to a lower threshold. Only CLEANs the 
     model components.
 
@@ -629,13 +637,21 @@ def deep_minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
         _description_
     """
     # Coefficients can change between iterations.
-    #dirtySkyMap.expand_coeffs()
-    dirtySkyMap.calc_thresh_map(windowSizeDeg=windowSizeDeg,lMax=lMax)
-
+    dirtySkyMap.calc_thresh_map(windowSizeDeg=windowSizeDeg,lMax=lMax,
+                                bkgMap=bkgMap)
 
     xVec,yVec = peakCoords
+
+    # Only deep clean peaks in the mask.
+    mask = dirtySkyMap.cleanMask[yVec,xVec]
+    xVec = xVec[mask]
+    yVec = yVec[mask]
+
     #
-    SNRvec = dirtySkyMap.threshMap[yVec,xVec]
+    if findNegPeaks:
+        SNRvec = np.abs(dirtySkyMap.threshMap[yVec,xVec])
+    else:
+        SNRvec = dirtySkyMap.threshMap[yVec,xVec]
 
     if verbosity > 0:
         print("=========")
@@ -643,7 +659,7 @@ def deep_minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
         print(SNRvec.mean())
         print(SNRvec.max())
         print(SNRvec.min())
-
+    
     xVec = xVec[SNRvec>=thresh]
     yVec = yVec[SNRvec>=thresh]
 
@@ -668,7 +684,9 @@ def deep_minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
     if dirtySkyMap.stdMap is not None:
         stdRef = np.nanmedian(dirtySkyMap.stdMap)
         stdVec = dirtySkyMap.stdMap[yVec,xVec]
-        loopGain = loopGain*stdRef/stdVec
+        loopGain = np.abs(loopGain*stdRef/stdVec)
+        # Set a minimum to the loop gain.
+        loopGain[loopGain < 0.005] = 0.005
 
     #
     peakVec = dirtySkyMap.skyMap[yVec,xVec]
@@ -690,45 +708,47 @@ def deep_minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
     SNRvec = dirtySkyMap.threshMap[yVec,xVec]
     
     return True
-    
 
 def major_iter(skyCoeffs,modelMap,peakInterp,psfWeightsTensor,
                almTensor,mmodeTensor,damp,weights=None,lMax=None,
                lMaxVec=None,verbosity=0,cleanMask=None,maskList=None,
                DECthresh=(90,-90),Nminor=1000,loopGain=0.1,thresh=7,sigThresh=2,
-               windowSizeDeg=6,plotCond=False,peaks_kwargs=None):
+               windowSizeDeg=6,plotCond=False,peaks_kwargs=None,
+               findNegPeaks=False,deepClean=True,minorLoop=True,bkgMap=True):
     
     dirtySkyMap = SkyMap(coeffs=skyCoeffs)
     if verbosity > 0:
         print("Calculating the median deviation map...")
+    dirtySkyMap.calc_background_map(windowSizeDeg=windowSizeDeg)
     dirtySkyMap.calc_std_map(windowSizeDeg=windowSizeDeg)
 
     if verbosity > 0:
         print("Calculating the clean mask...")
     # 
-    dirtySkyMap.calc_mask(initalMask=cleanMask,DECthresh=DECthresh,
+    dirtySkyMap.calc_mask(initialMask=cleanMask,DECthresh=DECthresh,
                           maskList=maskList,plotCond=plotCond)
 
-    if verbosity > 0:
-        print(f"CLEANing down to thresh {thresh}...")
-    # Find peaks to CLEAN to a shallow PSF in the dirty Image.
-    for i in tqdm(range(Nminor)):
-        if i%200 == 0: 
-            printCond = 1
-        else:
-            printCond = 0
-        #
-        loopCond = minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
-                              loopGain=loopGain,thresh=thresh,
-                              verbosity=printCond,windowSizeDeg=windowSizeDeg,
-                              lMax=lMax,peaks_kwargs=peaks_kwargs)
+    if minorLoop:
+        # There may be conditions where there are no more minor loops needed.
+        if verbosity > 0:
+            print(f"CLEANing down to thresh {thresh}...")
+        # Find peaks to CLEAN to a shallow PSF in the dirty Image.
+        for i in tqdm(range(Nminor)):
+            if i%200 == 0: 
+                printCond = 1
+            else:
+                printCond = 0
+            #
+            loopCond = minor_iter(dirtySkyMap,modelMap,peakInterp,
+                                  psfWeightsTensor,loopGain=loopGain,
+                                  thresh=thresh,verbosity=printCond,
+                                  windowSizeDeg=windowSizeDeg,lMax=lMax,
+                                  findNegPeaks=findNegPeaks,
+                                  peaks_kwargs=peaks_kwargs,
+                                  bkgMap=bkgMap)
 
-        if not(loopCond):
-            break
-
-    if plotCond:
-        dirtySkyMap.plot_cart_map(norm='asinh',vmin=-1e6,vmax=1e6,
-                                  linear_width=1e4)
+            if not(loopCond):
+                break
 
     # 
     _,latGrid = np.meshgrid(dirtySkyMap.raVec,dirtySkyMap.decVec)
@@ -737,28 +757,37 @@ def major_iter(skyCoeffs,modelMap,peakInterp,psfWeightsTensor,
     yVec = yGrid[modelMap!=0]
     modelCoords = np.vstack((xVec,yVec))
     dirtySkyMap.latGrid = latGrid
-
-    dirtySkyMap.plot_cart_map(img=modelMap,norm='asinh',vmin=-1e6,vmax=1e6,
-                              linear_width=1e4)
+    
+    if plotCond:
+        dirtySkyMap.plot_cart_map(norm='asinh',vmin=-1e6,vmax=1e6,
+                                  linear_width=1e4)
+        dirtySkyMap.plot_cart_map(img=modelMap,norm='asinh',vmin=-1e6,vmax=1e6,
+                                linear_width=1e4)
+        
 
     # Perform a deep clean using only the model parameters.
-    if verbosity > 0:
-        print(f"CLEANing model down to thresh {sigThresh}...")
-        print(f"Number of sources to CLEAN = {xVec.size}")
-    for i in tqdm(range(Nminor)):
-        if i % 200 == 0:
-            printCond = 1
-        else:
-            printCond = 0
-        #
-        loopCond = deep_minor_iter(dirtySkyMap,modelMap,peakInterp,
-                                   psfWeightsTensor,modelCoords,
-                                   loopGain=loopGain,thresh=sigThresh,
-                                   verbosity=printCond,
-                                   windowSizeDeg=windowSizeDeg,lMax=lMax)
+    if deepClean:
+        # You may not want to perform a deep CLEAN, and just find peaks.
+        if verbosity > 0:
+            print(f"CLEANing model down to thresh {sigThresh}...")
+            print(f"Number of sources to CLEAN = {xVec.size}")
 
-        if not(loopCond):
-            break
+        for i in tqdm(range(Nminor)):
+            if i % 200 == 0:
+                printCond = 1
+            else:
+                printCond = 0
+            #
+            loopCond = deep_minor_iter(dirtySkyMap,modelMap,peakInterp,
+                                    psfWeightsTensor,modelCoords,
+                                    loopGain=loopGain,thresh=sigThresh,
+                                    verbosity=printCond,
+                                    windowSizeDeg=windowSizeDeg,lMax=lMax,
+                                    findNegPeaks=findNegPeaks,
+                                    bkgMap=bkgMap)
+
+            if not(loopCond):
+                break
 
     if plotCond:
         #dirtySkyMap.plot_cart_map(coords=np.array([yVec,xVec]).T,norm='asinh',

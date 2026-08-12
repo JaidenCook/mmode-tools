@@ -517,7 +517,7 @@ class SkyMap:
         # Set to zero for the next iteration.
         stdCoeffs = mapPrep.expand(normalization='ortho',csphase=-1).coeffs
 
-
+        #
         windowSizePix = int(windowSizeDeg/(360/Ncells)) + 1
         
         if windowSizePix % 2 == 0:
