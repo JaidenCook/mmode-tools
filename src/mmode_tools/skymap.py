@@ -480,7 +480,7 @@ class SkyMap:
             self.bkgMap = skyMapObjLPF.data.real
     
     #
-    def calc_std_map(self,windowSizeDeg=6,lMax=None):
+    def calc_std_map(self,windowSizeDeg=6,lMax=None,mode='MAD'):
         """calc_std_map _summary_
 
         Parameters
@@ -489,6 +489,8 @@ class SkyMap:
             _description_, by default 6
         lMax : _type_, optional
             _description_, by default None
+        mode : str, optional
+            The method to calculate the standard deviation, by default 'MAD'
         """
 
         # Performing check on new lMax input.            
@@ -496,7 +498,8 @@ class SkyMap:
 
         Ncells = self.coeffs.shape[1]*4 + 1
         #windowSizePix = int(windowSizeDeg/(360/Ncells)) + 1
-        windowSizePix = int(3/(360/Ncells)) + 1
+        filterWindowSizeDeg = 3 # deg
+        windowSizePix = int(filterWindowSizeDeg/(360/Ncells)) + 1
 
         if windowSizePix % 2 == 0:
             windowSizePix += 1
@@ -510,8 +513,18 @@ class SkyMap:
         calFactor = 1.4826 # Maps MAD to Std
         diffMap = self.skyMap - self.bkgMap
         # Median Absolute Difference map.
-        self.stdMap =  calFactor*generic_filter(np.abs(diffMap),np.median,
-                                                size=windowSizePix)
+        if mode == 'MAD':
+            self.stdMap =  calFactor*generic_filter(np.abs(diffMap),np.median,
+                                                    size=windowSizePix)
+        elif mode == 'STD':
+            self.stdMap = generic_filter(diffMap,np.std,size=windowSizePix)
+        elif mode == 'IQR':
+            from scipy.stats import iqr
+            calFactor = 1/1.349 # Maps IQR to Std
+            self.stdMap = calFactor*generic_filter(diffMap, iqr,
+                                                   size=windowSizePix)
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
         
         mapPrep = SHGrid.from_array(np.array(self.stdMap,dtype=np.complex64))
         # Set to zero for the next iteration.
@@ -560,7 +573,8 @@ class SkyMap:
             if self.bkgMap is None:
                 self.calc_background_map(windowSizeDeg=windowSizeDeg,lMax=lMax)
         else:
-            self.bkgMap = np.ones_like(self.skyMap)*np.nanmedian(self.skyMap)
+            #self.bkgMap = np.ones_like(self.skyMap)*np.nanmedian(self.skyMap)
+            self.bkgMap = np.zeros_like(self.skyMap)
         self.threshMap = (self.skyMap - self.bkgMap)/self.stdMap
     
     def find_peaks(self,thresh=4,windowSizeDeg=6,findNegPeaks=False,**kwargs):
@@ -568,8 +582,8 @@ class SkyMap:
 
         Parameters
         ----------
-        thresh : int, optional
-            _description_, by default 4
+        thresh : float, optional
+            The threshold value for peak detection, by default 4
 
         Returns
         -------
@@ -590,9 +604,10 @@ class SkyMap:
         # Performing the peak detection on the masked threshold map.
         if findNegPeaks:
             coords = peak_local_max(np.abs(threshMap),threshold_abs=thresh,
-                                    **kwargs)
+                                    exclude_border=0,**kwargs)
         else:
-            coords = peak_local_max(threshMap,threshold_abs=thresh,**kwargs)
+            coords = peak_local_max(threshMap,threshold_abs=thresh,
+                                    exclude_border=0,**kwargs)
         #coords = peak_local_max(threshMap,threshold_abs=thresh,min_distance=10,
         #                        num_peaks=100)
         threshVec = threshMap[coords[:,0],coords[:,1]]
