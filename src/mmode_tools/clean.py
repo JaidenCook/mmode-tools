@@ -555,6 +555,7 @@ def minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
                verbosity=0,peaks_kwargs=None,findNegPeaks=False,
                bkgMap=True):
     # Coefficients can change between iterations.
+    #dirtySkyMap.expand_coeffs()
     dirtySkyMap.calc_thresh_map(windowSizeDeg=windowSizeDeg,lMax=lMax,
                                 bkgMap=bkgMap)
 
@@ -637,6 +638,7 @@ def deep_minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
         _description_
     """
     # Coefficients can change between iterations.
+    #dirtySkyMap.expand_coeffs()
     dirtySkyMap.calc_thresh_map(windowSizeDeg=windowSizeDeg,lMax=lMax,
                                 bkgMap=bkgMap)
 
@@ -655,7 +657,6 @@ def deep_minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
 
     if verbosity > 0:
         print("=========")
-        #print(SNRvec[:5])
         print(SNRvec.mean())
         print(SNRvec.max())
         print(SNRvec.min())
@@ -706,21 +707,27 @@ def deep_minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
     dirtySkyMap.coeffs = dirtySkyMap.coeffs - dirtyModelSkyMap.coeffs
 
     SNRvec = dirtySkyMap.threshMap[yVec,xVec]
+
+    if (SNRvec>=thresh).sum() == 0:
+        print("No more model sources above threshold...")
+        return False
     
     return True
+    
 
 def major_iter(skyCoeffs,modelMap,peakInterp,psfWeightsTensor,
                almTensor,mmodeTensor,damp,weights=None,lMax=None,
                lMaxVec=None,verbosity=0,cleanMask=None,maskList=None,
                DECthresh=(90,-90),Nminor=1000,loopGain=0.1,thresh=7,sigThresh=2,
                windowSizeDeg=6,plotCond=False,peaks_kwargs=None,
-               findNegPeaks=False,deepClean=True,minorLoop=True,bkgMap=True):
+               findNegPeaks=False,deepClean=True,minorLoop=True,bkgMap=True,
+               stdMapMode='MAD'):
     
     dirtySkyMap = SkyMap(coeffs=skyCoeffs)
     if verbosity > 0:
         print("Calculating the median deviation map...")
     dirtySkyMap.calc_background_map(windowSizeDeg=windowSizeDeg)
-    dirtySkyMap.calc_std_map(windowSizeDeg=windowSizeDeg)
+    dirtySkyMap.calc_std_map(windowSizeDeg=windowSizeDeg,mode=stdMapMode)
 
     if verbosity > 0:
         print("Calculating the clean mask...")
@@ -728,6 +735,7 @@ def major_iter(skyCoeffs,modelMap,peakInterp,psfWeightsTensor,
     dirtySkyMap.calc_mask(initialMask=cleanMask,DECthresh=DECthresh,
                           maskList=maskList,plotCond=plotCond)
 
+    minorLoopCounter = 0
     if minorLoop:
         # There may be conditions where there are no more minor loops needed.
         if verbosity > 0:
@@ -749,6 +757,8 @@ def major_iter(skyCoeffs,modelMap,peakInterp,psfWeightsTensor,
 
             if not(loopCond):
                 break
+            else:
+                minorLoopCounter += 1
 
     # 
     _,latGrid = np.meshgrid(dirtySkyMap.raVec,dirtySkyMap.decVec)
@@ -766,6 +776,7 @@ def major_iter(skyCoeffs,modelMap,peakInterp,psfWeightsTensor,
         
 
     # Perform a deep clean using only the model parameters.
+    deepCleanCounter = 0
     if deepClean:
         # You may not want to perform a deep CLEAN, and just find peaks.
         if verbosity > 0:
@@ -788,6 +799,8 @@ def major_iter(skyCoeffs,modelMap,peakInterp,psfWeightsTensor,
 
             if not(loopCond):
                 break
+            else:
+                deepCleanCounter += 1
 
     if plotCond:
         #dirtySkyMap.plot_cart_map(coords=np.array([yVec,xVec]).T,norm='asinh',
@@ -810,9 +823,18 @@ def major_iter(skyCoeffs,modelMap,peakInterp,psfWeightsTensor,
     # Making the skyMap object
     modelSkyMap = SkyMap(skyMap=modelMap)
     # Calculating the residual sky modes through a major iteration.
-    _,skyModes = make_resid_map(modelSkyMap.coeffs,almTensor,mmodeTensor,
-                                lMax=lMax,lMaxVec=lMaxVec,weights=weights,
-                                damp=damp,returnCoeffs=True,verbosity=verbosity)
+
+    if deepCleanCounter + minorLoopCounter > 0:
+        if verbosity > 0:
+            print(f"Calculating the residual sky modes...")
+        _,skyModes = make_resid_map(modelSkyMap.coeffs,almTensor,mmodeTensor,
+                                    lMax=lMax,lMaxVec=lMaxVec,weights=weights,
+                                    damp=damp,returnCoeffs=True,
+                                    verbosity=verbosity)
+    else:
+        if verbosity > 0:
+            print(f"No CLEANing performed, returning the original sky modes...")
+        skyModes = skyCoeffs
     
     return skyModes
     
