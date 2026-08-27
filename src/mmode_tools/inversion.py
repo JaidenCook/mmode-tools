@@ -709,7 +709,7 @@ def calc_fisher_coeffs(almTensorList,noiseVec,lMax=None,
                     # If the relative offset is a list or vector index for the 
                     # appropriate value.
                     scale = relOffset[i]
-            eps = scale*np.nanmedian(FIcoeffs[FImask])
+            eps = scale*np.nanmedian(FIcoeffs[i,FImask])
             # setting zero value FI coefficients to the median. Zeros cause issues
             # in the inversion process.
             FIcoeffs[i,FImask] += eps
