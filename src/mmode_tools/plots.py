@@ -235,6 +235,9 @@ def coefficient_plot(coeffs,lmax=None,figaxs=None,cmap='viridis',norm='linear',
         fmt = matplotlib.ticker.LogFormatterMathtext()
         fmt.create_dummy_axis()
 
+        if vmax is None:
+            vmax = np.nanmax(np.abs(coeff_Arr))
+        
         logMax = (10**int(np.log10(vmax)))
         Nlevels = 5
         levels = np.logspace(-Nlevels,-1,Nlevels)*logMax
