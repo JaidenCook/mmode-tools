@@ -388,10 +388,52 @@ class SkyMap:
         if maskList is not None:
             maskGrid = np.ones_like(RAgrid)
             for mask in maskList:
-                yInd = mask[0]
-                xInd = mask[1]
-                size = mask[2]
-                maskGrid[yInd:yInd+size,xInd:xInd+size] = 0
+                if len(mask) == 3:
+                    yInd = mask[0]
+                    xInd = mask[1]
+                    size = mask[2]
+                    maskGrid[yInd:yInd+size,xInd:xInd+size] = 0
+                elif len(mask) >= 4:
+                    if mask[-1] == 'rect':
+                        if len(mask) < 5:
+                            raise ValueError("Rectangular mask requires at " \
+                            "least 5 elements: yInd, xInd, ySize, xSize, " \
+                            "'rect'")
+                        yInd = mask[0]
+                        xInd = mask[1]
+                        ySize = mask[2]
+                        xSize = mask[3]
+                        maskGrid[yInd:yInd+ySize,xInd:xInd+xSize] = 0
+                    elif mask[-1] == 'square':
+                        if len(mask) < 4:
+                            raise ValueError("Square mask requires at least 4 " \
+                            "elements: yInd, xInd, size, 'square'")
+                        yInd = mask[0]
+                        xInd = mask[1]
+                        size = mask[2]
+                        maskGrid[yInd:yInd+size,xInd:xInd+size] = 0
+                    elif mask[-1] == 'circle':
+                        if len(mask) < 4:
+                            raise ValueError("Circle mask requires at least 4 " \
+                            "elements: yInd, xInd, radius, 'circle'")
+                        yInd = mask[0]
+                        xInd = mask[1]
+                        radius = mask[2]
+                        yGrid,xGrid = np.ogrid[:RAgrid.shape[0],:RAgrid.shape[1]]
+                        maskGrid[((yGrid-yInd)**2 + (xGrid-xInd)**2) <= radius**2] = 0
+                    elif mask[-1] == 'ellipse':
+                        if len(mask) < 5:
+                            raise ValueError("Ellipse mask requires at least 5 " \
+                            "elements: yInd, xInd, yRadius, xRadius, 'ellipse'")
+                        yInd = mask[0]
+                        xInd = mask[1]
+                        yRadius = mask[2]
+                        xRadius = mask[3]
+                        yGrid,xGrid = np.ogrid[:RAgrid.shape[0],:RAgrid.shape[1]]
+                        maskGrid[((yGrid-yInd)**2 / yRadius**2 + (xGrid-xInd)**2 / xRadius**2) <= 1] = 0
+
+
+
             # Converting to True False map.
             maskGrid = maskGrid.astype(bool)
             cleanMaskList.append(maskGrid)

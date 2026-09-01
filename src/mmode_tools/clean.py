@@ -948,16 +948,22 @@ def make_restored_map(residDirtyMap,modelMap,paramsArr,xygrid,
 
 def make_mask_box(maskParams,RAgrid,DECgrid):
     """
-    Function for making a masking box.
+    Function for making masking regions with different shapes.
 
     Parameters:
     ----------
-    RA : np.ndarray
-        Vector of RA values for each of the masks.
-    DEC : np.ndarray
-        Vector of DEC values for each of the masks.
-    size : np.ndarray
-        Vector of mask sizes in degrees.
+    maskParams : list of tuples
+        List of mask parameters. Each tuple defines a mask with the following 
+        formats:
+        
+        - Square (default): (identifier, RA, DEC, size)
+        - Rectangular: (identifier, RA, DEC, ySize, xSize, 'rect')
+        - Circle: (identifier, RA, DEC, radius, 'circle')
+        - Ellipse: (identifier, RA, DEC, yRadius, xRadius, 'ellipse')
+        
+        All angular coordinates (RA, DEC, sizes, radii) are in degrees and will
+        be converted to pixel coordinates.
+        
     RAgrid : np.ndarray
         RA grid, for determining the pixel location.
     DECgrid : np.ndarray
@@ -966,43 +972,137 @@ def make_mask_box(maskParams,RAgrid,DECgrid):
     Returns:
     ----------
     maskList : list
-        List of mask parameters, each entry is a tuple of size 3, with elements
-        being ycorner, xcorner indices, and the size of the square mask in pix.
+        List of mask parameters in pixel coordinates. Each mask is formatted 
+        appropriately for its shape type:
+        
+        - Square: (yCorner, xCorner, sizePix)
+        - Rectangle: (yCorner, xCorner, ySizePix, xSizePix, 'rect')
+        - Circle: (yCenter, xCenter, radiusPix, 'circle')
+        - Ellipse: (yCenter, xCenter, yRadiusPix, xRadiusPix, 'ellipse')
 
     """
-    _,RA,DEC,size = zip(*maskParams)
-
-    RA = np.array(RA)
-    DEC = np.array(DEC)
-    size = np.array(size)
-
     # Expected pixel size in degrees.
     dtheta = 360/RAgrid.shape[1]
-    # Converting angular size from degrees to pixel size.
-    sizePix = (size/dtheta).astype(int)
-
-    # Calculating the RA and DEC corner values.
-    RAcorner = RA - size/2
-    DECcorner = DEC - size/2
-
-    # Adjusting values in if any fall outside of the grid.
-    DECcorner[DECcorner < -90] = -90
-    RAcorner[RAcorner < 0] = 180 + RAcorner[RAcorner < 0] # Wraps.
-
-    # Getting the ravel indices for each of the grid points.
-    indexVec = np.zeros(RA.shape,dtype=int)
-    for ind,ra in enumerate(RAcorner):
-        dec = DECcorner[ind]
-        indexVec[ind] = np.argmin(np.sqrt((RAgrid-ra)**2 + (DECgrid-dec)**2))
     
-    # Getting the y and x ind corner unravelled indices
-    yCorner,xCorner = np.unravel_index(indexVec,RAgrid.shape)
+    maskList = []
 
-    # Zipping the values together in a list. This list can be read by the CLEAN
-    # functions.
-    #maskList = list(zip(yCorner,xCorner,sizePix))
-    maskList = list(zip(yCorner.tolist(),xCorner.tolist(),sizePix.tolist()))
-
+    
+    for mask_params in maskParams:
+        # Determine mask type based on tuple length and content
+        Nparams = len(mask_params)
+        maskType = mask_params[-1]
+        if Nparams == 4:
+            # Default to square: (id, RA, DEC, size)
+            mask_type = 'square'
+            identifier, ra, dec, size = mask_params
+            
+            # Converting angular size from degrees to pixel size
+            size_pix = int(size / dtheta)
+            
+            # Calculating the RA and DEC corner values
+            ra_corner = ra - size / 2
+            dec_corner = dec - size / 2
+            
+            # Adjusting values if they fall outside the grid
+            if dec_corner < -90:
+                dec_corner = -90
+            if ra_corner < 0:
+                ra_corner = 180 + ra_corner  # Wraps around
+            
+            # Find the closest grid point to the corner
+            index = np.argmin(np.sqrt((RAgrid - ra_corner)**2 + (DECgrid - dec_corner)**2))
+            y_corner, x_corner = np.unravel_index(index, RAgrid.shape)
+            
+            maskList.append((y_corner, x_corner, size_pix))
+        
+        elif (Nparams == 6) and (maskType == 'rect'):
+            # Rectangle: (id, RA, DEC, ySize, xSize, 'rect')
+            identifier, ra, dec, y_size, x_size = mask_params[:-1]
+            mask_type = mask_params[-1]
+            
+            # Converting angular sizes from degrees to pixel sizes
+            y_size_pix = int(y_size / dtheta)
+            x_size_pix = int(x_size / dtheta)
+            
+            # Calculating the RA and DEC corner values
+            ra_corner = ra - x_size / 2
+            dec_corner = dec - y_size / 2
+            
+            # Adjusting values if they fall outside the grid
+            if dec_corner < -90:
+                dec_corner = -90
+            if ra_corner < 0:
+                ra_corner = 180 + ra_corner  # Wraps around
+            
+            # Find the closest grid point to the corner
+            index = np.argmin(np.sqrt((RAgrid - ra_corner)**2 + (DECgrid - dec_corner)**2))
+            y_corner, x_corner = np.unravel_index(index, RAgrid.shape)
+            
+            maskList.append((y_corner, x_corner, y_size_pix, x_size_pix, 'rect'))
+        
+        elif (Nparams == 5) and (maskType == 'square'):
+            # Square with explicit type: (id, RA, DEC, size, 'square')
+            identifier, ra, dec, size = mask_params[:-1]
+            mask_type = mask_params[-1]
+            
+            # Converting angular size from degrees to pixel size
+            size_pix = int(size / dtheta)
+            
+            # Calculating the RA and DEC corner values
+            ra_corner = ra - size / 2
+            dec_corner = dec - size / 2
+            
+            # Adjusting values if they fall outside the grid
+            if dec_corner < -90:
+                dec_corner = -90
+            if ra_corner < 0:
+                ra_corner = 180 + ra_corner  # Wraps around
+            
+            # Find the closest grid point to the corner
+            index = np.argmin(np.sqrt((RAgrid - ra_corner)**2 + (DECgrid - dec_corner)**2))
+            y_corner, x_corner = np.unravel_index(index, RAgrid.shape)
+            
+            maskList.append((y_corner, x_corner, size_pix, 'square'))
+        
+        elif (Nparams == 5) and (maskType == 'circle'):
+            # Circle: (id, RA, DEC, radius, 'circle')
+            identifier, ra, dec, radius = mask_params[:-1]
+            mask_type = mask_params[-1]
+            
+            # Converting angular radius from degrees to pixel radius
+            radius_pix = int(radius / dtheta)
+            
+            # Find the closest grid point to the center
+            index = np.argmin(np.sqrt((RAgrid - ra)**2 + (DECgrid - dec)**2))
+            y_center, x_center = np.unravel_index(index, RAgrid.shape)
+            
+            maskList.append((y_center, x_center, radius_pix, 'circle'))
+        
+        elif (Nparams == 6) and (maskType == 'ellipse'):
+            # Ellipse: (id, RA, DEC, yRadius, xRadius, 'ellipse')
+            identifier, ra, dec, y_radius, x_radius = mask_params[:-1]
+            mask_type = mask_params[-1]
+            
+            # Converting angular radii from degrees to pixel radii
+            y_radius_pix = int(y_radius / dtheta)
+            x_radius_pix = int(x_radius / dtheta)
+            
+            # Find the closest grid point to the center
+            index = np.argmin(np.sqrt((RAgrid - ra)**2 + (DECgrid - dec)**2))
+            y_center, x_center = np.unravel_index(index, RAgrid.shape)
+            
+            maskList.append((y_center, x_center, y_radius_pix, x_radius_pix, 'ellipse'))
+        
+        else:
+            raise ValueError(
+                f"Invalid mask parameter format: {mask_params}. "
+                "Supported formats are:\n"
+                "  - Square (default): (id, RA, DEC, size)\n"
+                "  - Rectangle: (id, RA, DEC, ySize, xSize, 'rect')\n"
+                "  - Circle: (id, RA, DEC, radius, 'circle')\n"
+                "  - Ellipse: (id, RA, DEC, yRadius, xRadius, 'ellipse')"
+            )
+    
     return maskList
 
 
