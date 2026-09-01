@@ -438,9 +438,94 @@ def plot_dirty_image(dirtyMap,coords=None,figaxs=None,cmap='twilight_shifted',
                                        winx,winy,edgecolor='k',facecolor='none')
             axs.add_patch(square)
 
-def make_resid_map(model,almTensor,mmodeTensor,weights=None,lMax=130,lMaxVec=None,
-                   mMax=None,verbosity=1,damp=0.5,returnCoeffs=False,plotCond=False,
-                   vmin=-1e6,vmax=1e6,linear_width=1e5):
+def make_resid_mmode_tensor(model,almTensor,mmodeTensor,lMax=130,lMaxVec=None):
+    """
+    Takes input model image, beam fringe coefficients, and mmode visibility data
+    tensor. Performs a subtraction of the model from the data, and solves for 
+    the residual mmode visibility tensor.
+
+    Parameters:
+    ----------
+    model : np.float64 np.ndarray
+        Real 2D map or 3D array of complex SH coefficients.
+    almTensor : list or numpy array, complex64
+        Array containing the beam fringe spherical harmonic coefficients. For 
+        multi-system this is a list containing the beam fringe sh-coefficient
+        tensors for each system.
+    mmodeTensor : np.complex64 np.ndarray
+        Mmode visibility data tensor.
+    lMax : int, default=130
+        Max l-mode.
+    verbosity : int, default=1
+        CGLS output order, goes from 1-10, 1 being less output, 10 being more.
+    damp : float, default=0.5
+        CGLS dampening coefficient.
+
+    Returns:
+    ----------
+    residMmodeTensor : np.complex64 np.ndarray
+        Output residual mmode visibility tensor.
+    """
+    if model.ndim == 2:
+        # If the input dimensions is 2 then the input model is an image/map.
+        mapPrep = SHGrid.from_array(np.array(model,dtype=np.complex64))
+        # Set to zero for the next iteration.
+        modelCo = mapPrep.expand(normalization='ortho',csphase=-1).coeffs
+        modelCo = modelCo[0,:,:]
+    elif model.ndim == 3:
+        # If number of dimensions is 3, then the input is the model coefficients.
+        modelCo = model[0,:,:]
+
+    if isinstance(almTensor,list):
+        # For multi-system CLEAN with different lmax values.
+        # The number of baselines per system.
+        NbVec = np.array([alm.shape[0] for alm in almTensor]) # Nbaseline vector
+
+        # Getting the lMax vector if one is not provided. 
+        if lMaxVec is None:
+            lMaxVec = np.array([alm.shape[-1] for alm in almTensor])
+            # Setting the maximum lMax to the provided one
+            lMaxVec[lMaxVec > lMax] = lMax
+
+        #
+        NbSum = 0 # Running number of baselines sum.
+        modelMmodeTensor = np.zeros([np.sum(NbVec),int(lMax+1)],
+                                    dtype=np.complex64)
+        
+        for i,alm in enumerate(almTensor):
+            lMaxTmp = lMaxVec[i]
+            # Getting the temp mmode tensor for system i
+            tmpMmodeTensor = np.conj(np.einsum("blm,lm->bm",
+                                                alm[:,:lMaxTmp+1,:lMaxTmp+1],
+                                                modelCo[:lMaxTmp+1,:lMaxTmp+1],
+                                                optimize='optimal'))
+            # Assigning the mmode values to the appropriate baseline indices.
+            modelMmodeTensor[NbSum:NbSum+NbVec[i],:lMaxTmp+1] = tmpMmodeTensor
+            # Increasing the running total baseline sum.
+            NbSum += NbVec[i]
+
+    elif isinstance(almTensor,np.ndarray):
+        # For single system.
+        # Forward modelling the mmode tensor.
+        modelMmodeTensor  = np.conj(np.einsum("blm,lm->bm",
+                                                almTensor[:,:lMax+1,:lMax+1],
+                                                modelCo[:,:lMax+1],
+                                                optimize='optimal'))
+
+    # Calculating the residual mmode tensor.
+    if mmodeTensor.ndim == 3:
+        # Only need positive m-modes.
+        residMmodeTensor = mmodeTensor[:,0,:lMax+1] - modelMmodeTensor
+    elif mmodeTensor.ndim == 2:
+        # Only need positive m-modes.
+        residMmodeTensor = mmodeTensor[:,:lMax+1] - modelMmodeTensor
+    
+    return residMmodeTensor
+
+def make_resid_map(model,almTensor,mmodeTensor,weights=None,lMax=130,
+                   lMaxVec=None,mMax=None,verbosity=1,damp=0.5,
+                   returnCoeffs=False,plotCond=False,vmin=-1e6,vmax=1e6,
+                   linear_width=1e5,returnTensor=False):
     """
     Takes input model image, beam fringe coefficients, and mmode visibility data
     tensor. Performs a subtraction of the model from the data, and solves for 
@@ -471,60 +556,10 @@ def make_resid_map(model,almTensor,mmodeTensor,weights=None,lMax=130,lMaxVec=Non
     residDirtyMap : np.complex64 np.ndarray
         Output residual dirty map.
     """
-    if model.ndim == 2:
-        # If the input dimensions is 2 then the input model is an image/map.
-        mapPrep = SHGrid.from_array(np.array(model,dtype=np.complex64))
-        # Set to zero for the next iteration.
-        modelCo = mapPrep.expand(normalization='ortho',csphase=-1).coeffs
-        modelCo = modelCo[0,:,:]
-    elif model.ndim == 3:
-        # If number of dimensions is 3, then the input is the model coefficients.
-        modelCo = model[0,:,:]
-
     invert = invert_tikh_multi_assym
-    if isinstance(almTensor,list):
-        # For multi-system CLEAN with different lmax values.
-        # The number of baselines per system.
-        NbVec = np.array([alm.shape[0] for alm in almTensor]) # Nbaseline vector
 
-        # Getting the lMax vector if one is not provided. 
-        if lMaxVec is None:
-            lMaxVec = np.array([alm.shape[-1] for alm in almTensor])
-            # Setting the maximum lMax to the provided one
-            lMaxVec[lMaxVec > lMax] = lMax
-
-        #
-        NbSum = 0 # Running number of baselines sum.
-        modelMmodeTensor = np.zeros([np.sum(NbVec),int(lMax+1)],
-                                    dtype=np.complex64)
-        
-        for i,alm in enumerate(almTensor):
-            lMaxTmp = lMaxVec[i]
-            # Getting the temp mmode tensor for system i
-            tmpMmodeTensor = np.conj(np.einsum("blm,lm->bm",
-                                               alm[:,:lMaxTmp+1,:lMaxTmp+1],
-                                               modelCo[:lMaxTmp+1,:lMaxTmp+1],
-                                               optimize='optimal'))
-            # Assigning the mmode values to the appropriate baseline indices.
-            modelMmodeTensor[NbSum:NbSum+NbVec[i],:lMaxTmp+1] = tmpMmodeTensor
-            # Increasing the running total baseline sum.
-            NbSum += NbVec[i]
-
-    elif isinstance(almTensor,np.ndarray):
-        # For single system.
-        # Forward modelling the mmode tensor.
-        modelMmodeTensor  = np.conj(np.einsum("blm,lm->bm",
-                                              almTensor[:,:lMax+1,:lMax+1],
-                                              modelCo[:,:lMax+1],
-                                              optimize='optimal'))
-
-    # Calculating the residual mmode tensor.
-    if mmodeTensor.ndim == 3:
-        # Only need positive m-modes.
-        residMmodeTensor = mmodeTensor[:,0,:lMax+1] - modelMmodeTensor
-    elif mmodeTensor.ndim == 2:
-        # Only need positive m-modes.
-        residMmodeTensor = mmodeTensor[:,:lMax+1] - modelMmodeTensor
+    residMmodeTensor = make_resid_mmode_tensor(model,almTensor,mmodeTensor,
+                                               lMax=lMax,lMaxVec=lMaxVec)
 
     # Solving for the sky modes.
     skyModes = invert(almTensor,np.conj(residMmodeTensor),lmax=lMax,
@@ -546,9 +581,15 @@ def make_resid_map(model,almTensor,mmodeTensor,weights=None,lMax=130,lMaxVec=Non
 
     if returnCoeffs:
         # Returned coefficients are useful for testing cases.
-        return residDirtyMap,skyModes
+        if returnTensor:
+            return residDirtyMap,skyModes,residMmodeTensor
+        else:
+            return residDirtyMap,skyModes
     else:
-        return residDirtyMap
+        if returnTensor:
+            return residDirtyMap,residMmodeTensor
+        else:
+            return residDirtyMap
     
 def minor_iter(dirtySkyMap,modelMap,peakInterp,psfWeightsTensor,
                loopGain=0.1,thresh=7,windowSizeDeg=6,lMax=None,
@@ -1208,3 +1249,56 @@ def calc_psf_weights_tensor(almTensorList,damp=0.01,weights=None,lMax=None,
 
     
     return WmTensor
+
+from numba import njit, prange, get_num_threads, get_thread_id
+
+@njit
+def Gaussian2Dxy(xdata_tuple,amplitude,x0,y0,amaj,bmin,theta,
+                 normAmp=False):
+    """
+    Generates 2D Gaussian array.
+
+    Parameters
+    ----------
+    x : numpy array, float
+        2D cartesian or azimuth numpy array. [rad]
+    y : numpy array, float
+        2D cartesian or zenith numpy array. [rad]
+    x0 : numpy array, float
+        Cartesian or Azimuth angle of the Gaussian centre. [rad]
+    y0 : numpy array, float
+        Cartesian or Zenith angle of the centre of the Gaussian. [rad]
+    amaj : numpy array, float
+        Gaussian major axis. [deg]
+    bmin : numpy array, float
+        Gaussian minor axis. [deg]
+    theta : numpy array, float
+        Gaussian position angle. [rad]
+
+    Returns
+    -------
+    2D Gaussian array.
+    """
+    (X,Y) = xdata_tuple
+    # Defining the width of the Gaussians
+    sigx = amaj/(2.0*np.sqrt(2.0*np.log(2.0)))
+    sigy = bmin/(2.0*np.sqrt(2.0*np.log(2.0)))
+
+    a = (np.cos(theta)**2)/(2.0*sigx**2) + (np.sin(theta)**2)/(2.0*sigy**2)
+    b = -np.sin(2.0*theta)/(4.0*sigx**2) + np.sin(2.0*theta)/(4.0*sigy**2)    
+    c = (np.sin(theta)**2)/(2.0*sigx**2) + (np.cos(theta)**2)/(2.0*sigy**2)
+        
+    if normAmp:
+        amplitude = amplitude/(2.0*np.pi*sigx*sigy)
+    return amplitude*np.exp(-(a*(X-x0)**2 + 2*b*(X-x0)*(Y-y0) + c*(Y-y0)**2))
+
+@njit(parallel=True)
+def make_restored_map_numba(modelMap,paramsArr,xx,yy):
+    Nsrcs = paramsArr.shape[0]
+    # Each thread gets its own slot
+    zz_sums = np.zeros((get_num_threads(),) + modelMap.shape)
+    
+    for i in prange(Nsrcs):
+        amp,x0,y0,amaj,bmin,PA = paramsArr[i,:]
+        zz_sums[get_thread_id()] += Gaussian2Dxy((xx,yy),amp,x0,y0,amaj,bmin,PA,normAmp=True)
+    return zz_sums.sum(axis=0)
