@@ -92,6 +92,7 @@ class SkyMap:
             if skyMap is not None:
                 msg = "Coeffs and skyMap both provided. Discarding skyMap " +\
                       "and creating new one from coefficients."
+                warn(msg)
             self.expand_coeffs()
         
         #
@@ -112,7 +113,7 @@ class SkyMap:
                 if weights.shape != coeffs.shape:
                     msg = "Input weights shape should be equal to coefficient"+\
                           ", setting to None."
-                    warn(warn)
+                    warn(msg)
                 else:
                     self.weights = weights
             elif isinstance(weights,float):
@@ -736,6 +737,7 @@ class SkyMap:
                          **kwargs)
 
     def plot_spectrum(self,lMax=None,unit='per_l',figaxs=None,fontsize=14,
+                      xscale='linear',
                       **kwargs):
         """plot_spectrum _summary_
 
@@ -759,16 +761,20 @@ class SkyMap:
         else:
             fig,axs = figaxs
         
-        #
+        
         axs.plot(self.spectrum,**kwargs)
         axs.set_xlabel(r'$\ell$',fontsize=fontsize+2)
         axs.set_ylabel(rf'Power $[\mathrm{{{self.unit}}}^2]$',
                        fontsize=fontsize+2)
+        
         #axs.set_xticklabels(axs.get_xticks().astype(int),fontsize=fontsize)
         #axs.set_yticklabels(axs.get_yticks().astype(int),fontsize=fontsize)
         [x.set_linewidth(2.) for x in axs.spines.values()]
 
         axs.set_yscale('log')
+        axs.set_xscale(xscale)
+        if lMax is not None:
+            axs.set_xlim(0, lMax)
 
     # TODO make these functions wrappers for functions in plots. 
     def plot_cart_map(self,img=None,coords=None,figaxs=None,
