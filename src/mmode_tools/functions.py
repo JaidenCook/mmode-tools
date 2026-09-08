@@ -49,6 +49,17 @@ def Gaussian2Dxy(xdata_tuple,amplitude,x0,y0,amaj,bmin,theta,
         amplitude = amplitude/(2.0*np.pi*sigx*sigy)
     return amplitude*np.exp(-(a*(X-x0)**2 + 2*b*(X-x0)*(Y-y0) + c*(Y-y0)**2))
 
+@njit(parallel=True)
+def make_restored_map_numba(modelMap,paramsArr,xx,yy):
+    Nsrcs = paramsArr.shape[0]
+    # Each thread gets its own slot
+    zz_sums = np.zeros((get_num_threads(),) + modelMap.shape)
+    
+    for i in prange(Nsrcs):
+        amp,x0,y0,amaj,bmin,PA = paramsArr[i,:]
+        zz_sums[get_thread_id()] += Gaussian2Dxy((xx,yy),amp,x0,y0,amaj,bmin,PA,normAmp=True)
+    return zz_sums.sum(axis=0)
+
 def power_law(x, amp, x0, index):
     """
     Power law fitting function.
@@ -135,6 +146,36 @@ def offset_rayleigh_pdf(x, scale, x0):
         Probability density function values
     """
     return rayleigh.pdf(x - x0, loc=0, scale=scale)
+
+def smooth_broken_power_law(ell, A, ell_break, alpha1, alpha2, s):
+    """
+    Smoothly broken power law.
+
+    Parameters
+    ----------
+    ell : array_like
+        Multipole values.
+    A : float
+        Normalisation.
+    ell_break : float
+        Break/transition multipole.
+    alpha1 : float
+        Low-ell power-law index.
+    alpha2 : float
+        High-ell power-law index.
+    s : float
+        Smoothness parameter. Larger values give a sharper transition.
+
+    Returns
+    -------
+    P : ndarray
+        Power spectrum.
+    """
+    x = np.asarray(ell) / ell_break
+
+    return A * x**(-alpha1) * (
+        1 + x**(1 / s)
+    )**(-s * (alpha2 - alpha1))
 
 def fit_offset_rayleigh(bins, density, p0=None):
     """

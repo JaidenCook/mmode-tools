@@ -1349,17 +1349,3 @@ def calc_psf_weights_tensor(almTensorList,damp=0.01,weights=None,lMax=None,
 
     
     return WmTensor
-
-from numba import njit, prange, get_num_threads, get_thread_id
-
-@njit(parallel=True)
-def make_restored_map_numba(modelMap,paramsArr,xx,yy):
-    from .functions import Gaussian2Dxy
-    Nsrcs = paramsArr.shape[0]
-    # Each thread gets its own slot
-    zz_sums = np.zeros((get_num_threads(),) + modelMap.shape)
-    
-    for i in prange(Nsrcs):
-        amp,x0,y0,amaj,bmin,PA = paramsArr[i,:]
-        zz_sums[get_thread_id()] += Gaussian2Dxy((xx,yy),amp,x0,y0,amaj,bmin,PA,normAmp=True)
-    return zz_sums.sum(axis=0)
