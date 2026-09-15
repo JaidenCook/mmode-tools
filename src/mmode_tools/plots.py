@@ -15,8 +15,8 @@ import cmasher as cmr
 
 def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer=None,
                           figaxs=None,scale='linear',title=None,xlim=None,ylim=None,
-                          plotReal=False,plotImag=False,plotAmp=False,
-                          label=None,color=None,lw=None,ls=None):
+                          plotReal=True,plotImag=True,plotAmp=True,
+                          label=None,color=None,lw=3,ls=None,alpha=0.5):
     """
     Plots the visibility fringes for a given baseline over as a function of
     LST.
@@ -61,28 +61,22 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer=None,
             label='Real'
         axs.plot(lstVec,covTensor[:,antInd1,antInd2].real,
                  label=label,color=color)
-    elif plotImag:
+    if plotImag:
         if color is None:
             color='tab:blue'
         if label is None:
             label='Imaginary'
         axs.plot(lstVec,covTensor[:,antInd1,antInd2].imag,label=label,
              color=color)
-    elif plotAmp:
+    if plotAmp:
         if color is None:
             color='k'
         if label is None:
             label='Amplitude'
+        if lw is None:
+            lw = 3
         axs.plot(lstVec,np.abs(covTensor[:,antInd1,antInd2]),color=color,
-                 zorder=1e3,label=label,linewidth=3,alpha=0.5)
-    
-    if not(plotReal) and not(plotImag) and not(plotAmp):
-        axs.plot(lstVec,np.abs(covTensor[:,antInd1,antInd2]),color='k',
-                 zorder=1e3,label='Amplitude',linewidth=3,alpha=0.5)
-        axs.plot(lstVec,covTensor[:,antInd1,antInd2].real,
-                 label='Real',color='tab:red')
-        axs.plot(lstVec,covTensor[:,antInd1,antInd2].imag,
-                 label='Imaginary',color='tab:blue')
+                 zorder=1e3,label=label,linewidth=lw,alpha=alpha)
 
     axs.set_xlabel('LST [hours]',fontsize=20)
     axs.set_ylabel('Amplitude',fontsize=20)
