@@ -52,22 +52,33 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer=None,
         _,axs = figaxs
 
     # Getting the antenna indices.
-    antInd1,antInd2 = antPair
+    if antPair is not None:
+        antInd1,antInd2 = antPair
+    else:
+        interferometer=None
+        title = None
     #
     if plotReal:
-        if color is None:
-            color='tab:red'
         if label is None:
-            label='Real'
-        axs.plot(lstVec,covTensor[:,antInd1,antInd2].real,
-                 label=label,color=color)
+            labelReal='Real'
+        
+        if antPair is None:
+            if covTensor.ndim == 1:
+                realVec = np.abs(covTensor)
+        else:
+            realVec = covTensor[:,antInd1,antInd2].real
+        axs.plot(lstVec,realVec,
+                 label=labelReal,color='tab:red')
     if plotImag:
-        if color is None:
-            color='tab:blue'
         if label is None:
-            label='Imaginary'
-        axs.plot(lstVec,covTensor[:,antInd1,antInd2].imag,label=label,
-             color=color)
+            labelImag='Imaginary'
+        if antPair is None:
+            if covTensor.ndim == 1:
+                imagVec = np.abs(covTensor)
+        else:
+            imagVec = covTensor[:,antInd1,antInd2].imag
+        axs.plot(lstVec,imagVec,label=labelImag,
+             color='tab:blue')
     if plotAmp:
         if color is None:
             color='k'
@@ -75,8 +86,15 @@ def plot_baseline_fringes(lstVec,covTensor,antPair,interferometer=None,
             label='Amplitude'
         if lw is None:
             lw = 3
-        axs.plot(lstVec,np.abs(covTensor[:,antInd1,antInd2]),color=color,
-                 zorder=1e3,label=label,linewidth=lw,alpha=alpha)
+        if ls is None:
+            ls = '-'
+        if antPair is None:
+            if covTensor.ndim == 1:
+                ampVec = np.abs(covTensor)
+        else:
+            ampVec = np.abs(covTensor[:,antInd1,antInd2])
+        axs.plot(lstVec,ampVec,color=color,
+                 zorder=1e3,label=label,linewidth=lw,alpha=alpha,ls=ls)
 
     axs.set_xlabel('LST [hours]',fontsize=20)
     axs.set_ylabel('Amplitude',fontsize=20)
