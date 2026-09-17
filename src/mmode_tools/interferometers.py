@@ -164,7 +164,6 @@ class RadioArray:
         except AttributeError: 
             # If flagIDs doesn't exist, then apply flags and create the attribute.
             pass
-        #self.goodAntIDs = self.antIDs[goodInds]
         self.goodAntIDs = list(np.array(self.antIDs)[goodInds])
         # Performing the flagging.
         self.east = self.east[goodInds]
@@ -411,7 +410,11 @@ class RadioArray:
         except AttributeError:
             self.enh2xyz()
             self.calc_baseline_matrix()
-            axs.scatter(self.uu_m,self.vv_m,**kwargs)
+            uVec = self.uu_m.flatten()
+            uVec = uVec[uVec!=0]
+            vVec = self.vv_m.flatten()
+            vVec = vVec[vVec!=0]
+            axs.scatter(uVec,vVec,**kwargs)
             axs.set_xlabel(r'$u\,[m]$',fontsize=fontsize)
             axs.set_ylabel(r'$v\,[m]$',fontsize=fontsize)
 
