@@ -876,7 +876,7 @@ class SkyMap:
                             vmin=None,linear_width=None,projection='mollweide',
                             cmap='twilight_shifted',shading='gouraud',grid=True,
                             fontsize=20,ticks=True,figaxs=None,xticks=False,
-                            title=None,transparent=False,
+                            title=None,transparent=False,clab='Amplitude',
                             contour_kwargs=None):
         """plot_equatorial_map _summary_
 
@@ -1002,7 +1002,7 @@ class SkyMap:
 
         if ticks:
             cb = fig.colorbar(im,location='bottom',fraction=0.046, pad=0.04)
-            cb.set_label('Amplitude',fontsize=fontsize)
+            cb.set_label(clab,fontsize=fontsize)
             axs.tick_params('both',labelsize=fontsize*(1+1/6))
             cb.ax.tick_params(labelsize=fontsize)
         else:
