@@ -1181,7 +1181,7 @@ def fits2skyCoeffs(filePath,readRegParams=False):
                     regParam = np.abs(restore_negmodes(regParam))
                 elif regParamsFlat.size == (lMax+1):
                     # Case where the regParams are different for each m-mode.
-                    regParam = np.abs(regParam)
+                    regParam = np.abs(regParamsFlat)
 
             return skyCoeffs,regParam
         else:
