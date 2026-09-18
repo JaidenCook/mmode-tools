@@ -57,7 +57,8 @@ def make_restored_map_numba(modelMap,paramsArr,xx,yy):
     
     for i in prange(Nsrcs):
         amp,x0,y0,amaj,bmin,PA = paramsArr[i,:]
-        zz_sums[get_thread_id()] += Gaussian2Dxy((xx,yy),amp,x0,y0,amaj,bmin,PA,normAmp=True)
+        zz_sums[get_thread_id()] += Gaussian2Dxy((xx,yy),amp,x0,y0,amaj,bmin,PA,
+                                                 normAmp=True)
     return zz_sums.sum(axis=0)
 
 def power_law(x, amp, x0, index):
