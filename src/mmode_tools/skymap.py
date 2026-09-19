@@ -1121,7 +1121,7 @@ class SkyMap:
         return gaussParams
     
     def filter_coeffs(self,filterType='blackmanharris',lMax=None,lwin=None,
-                      lcut=None):
+                      lcut=None,plotCond=False,**filter_kwargs):
         """filter_coeffs _summary_
 
         Parameters
@@ -1149,7 +1149,8 @@ class SkyMap:
             lcut = lMax - int(lwin)
 
         filter_coefficients(self.coeffs,filterType=filterType,
-                            lmax=lMax,lwin=lwin,lcut=lcut)
+                            lmax=lMax,lwin=lwin,lcut=lcut,plotCond=plotCond,
+                            **filter_kwargs)
         
         # Recreate the sky map after filtering the coefficients.
         self.expand_coeffs(lMax=lMax)

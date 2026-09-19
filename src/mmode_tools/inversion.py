@@ -557,7 +557,8 @@ def invert_tikh_multi_assym(almTensorList,mmodeTensor,lmax=130,mmax=None,
     return skyCoTensor
 
 def filter_coefficients(coeffs,lmax=200,lcut=130,lwin=None,
-                        filterType='blackmanharris'):
+                        filterType='blackmanharris',
+                        plotCond=False,**filter_kwargs):
     """
     Apply filter to input coefficients.
 
@@ -572,46 +573,75 @@ def filter_coefficients(coeffs,lmax=200,lcut=130,lwin=None,
     lwin : int, default=None
         Window length of taper. Default is lmax-lcut.
     filterType : str, default='blackmanharris'
-        Type of filter to apply. Options are 'blackmanharris' or 'ones'. In 
-        future we will upgrade this to be any of the optional scipy signal 
-        window types.
+        Type of filter to apply. Options are 'blackmanharris', 'gaussian', 
+        'butter', 'cheby2', or 'ones'.
     
     Returns
     -------
     None
     """
     ### TODO: Add in more filter types.
-    from scipy.signal.windows import blackmanharris,gaussian
+    from scipy.signal.windows import blackmanharris, gaussian
+    from scipy.signal import butter, cheby2, sosfreqz
     N = coeffs.shape[1]
     filterVec = np.ones(N)
     
     if lcut > lmax:
         errMsg = f"lcut > lmax, should strictly be less."
         raise ValueError(errMsg)
-    
+
+    if (lwin == None) or (lwin > int(lmax-lcut)):
+        lwin = int(lmax-lcut)
+
     if filterType == 'blackmanharris':
-        if (lwin == None) or (lwin > int(lmax-lcut)):
-            lwin = int(lmax-lcut)
-        
         filterFunc = blackmanharris
         filterVec[lcut+1:lcut+1+lwin] *= filterFunc(2*lwin)[-lwin:]
         filterVec[lcut+1+lwin:] = filterFunc(2*lwin)[-1] 
         filterVec[lcut+1+lwin:] = 0
     elif filterType == 'gaussian':
-        if lwin == None:
-            lwin = int(lmax-lcut)
         filterFunc = gaussian
         filterVec[lcut+1:lcut+1+lwin] *= filterFunc(2*lwin, std=lwin/2)[-lwin:]
         filterVec[lcut+1+lwin:] = filterFunc(2*lwin, std=lwin/2)[-1]
         filterVec[lcut+1+lwin:] = 0
+    elif filterType == 'butter':
+        # Butterworth low-pass filter with cutoff at lcut
+        # Design a low-pass Butterworth filter
+        order = filter_kwargs.get('order', 4)
+        # Normalized cutoff frequency (0 < Wn < 1, where 1 is Nyquist)
+        #Wn = (lcut+1) / N
+        Wn = (lcut+lwin+1) / N
+        sos = butter(order, Wn, btype='low', output='sos')
+        # Get the frequency response (power in frequency space)
+        w, h = sosfreqz(sos, worN=N)
+        filterVec = np.abs(h)
+    elif filterType == 'cheby2':
+        # Chebyshev type II low-pass filter with cutoff at lcut
+        # Design a low-pass Chebyshev type II filter
+        order = filter_kwargs.get('order', 4)
+        rs = filter_kwargs.get('rs', 40)  # Stopband attenuation in dB
+        # Normalized cutoff frequency (0 < Wn < 1, where 1 is Nyquist)
+        #Wn = (lcut+1) / N
+        Wn = (lcut+lwin+1) / N
+        sos = cheby2(order, rs, Wn, btype='low', output='sos')
+        # Get the frequency response (power in frequency space)
+        w, h = sosfreqz(sos, worN=N)
+        filterVec = np.abs(h)
+        
     elif filterType == 'ones':
         # This is a basic filter that just sets all coeffs above an lmax to 
         # zero.
         filterVec[lmax+1:] = 0
     else:
         raise ValueError(f"Filter type {filterType} not implemented, only " +\
-                         "blackmanharris or ones is available.")
+                         "blackmanharris, gaussian, butter, cheby2, or ones is available.")
 
+    if plotCond:
+        import matplotlib.pyplot as plt
+        fig,axs = plt.subplots()
+        axs.plot(filterVec)
+        axs.set_xlabel(r'$\ell$')
+        axs.set_ylabel('Normalised Filter Value')
+        plt.show()
     
     # Apply the filter to all coefficients.
     if coeffs.ndim == 3:
